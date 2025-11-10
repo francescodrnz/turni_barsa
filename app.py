@@ -166,26 +166,44 @@ if st.session_state.pdf_processed and st.session_state.shifts:
         
         # Form per aggiungere un nuovo turno
         with st.expander("➕ Aggiungi nuovo turno", expanded=False):
+            # Estrai i giorni unici con le loro date dai turni esistenti
+            giorni_disponibili = {}
+            for shift in st.session_state.shifts:
+                day, day_number = shift[0], shift[1]
+                day_display = format_day_for_display(day)
+                if day not in giorni_disponibili:
+                    giorni_disponibili[day] = (day_display, day_number)
+            
+            # Ordina i giorni per ordine settimanale
+            day_order = {
+                'lunedì': 1, 'martedì': 2, "mercoledi'": 3, 
+                'giovedì': 4, 'venerdì': 5, 'sabato': 6, 'domenica': 7
+            }
+            giorni_sorted = sorted(giorni_disponibili.items(), key=lambda x: day_order.get(x[0], 8))
+            
+            # Crea le opzioni per il selectbox
+            giorni_options = [f"{display} {number}" for day, (display, number) in giorni_sorted]
+            giorni_map = {f"{display} {number}": (day, number) for day, (display, number) in giorni_sorted}
+            
             with st.form(key="add_shift_form", clear_on_submit=True):
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    giorni = ['lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica']
-                    giorno = st.selectbox("Giorno", giorni)
+                    giorno_selezionato = st.selectbox("Giorno", giorni_options)
                     luogo = st.text_input("Luogo", placeholder="Es: Giardini del Castello")
                 
                 with col2:
-                    data = st.number_input("Data (giorno del mese)", min_value=1, max_value=31, value=1)
                     orario = st.text_input("Orario (es: 08:00-14:00)", placeholder="08:00-14:00")
-                
-                # Checkbox per pulizia bagni
-                pulizia_bagni_check = st.checkbox("Pulizia bagni (solo per Giardini del Castello)", value=False)
+                    # Checkbox per pulizia bagni
+                    pulizia_bagni_check = st.checkbox("Pulizia bagni (solo per Giardini del Castello)", value=False)
                 
                 submitted = st.form_submit_button("Aggiungi turno", type="primary")
                 
                 if submitted:
                     if luogo:
-                        giorno_norm = normalize_day_name(giorno)
+                        # Recupera giorno normalizzato e data dalla mappa
+                        giorno_norm, data = giorni_map[giorno_selezionato]
+                        
                         # Determina il valore di pulizia bagni
                         if "giardini del castello" in luogo.lower():
                             pulizia_bagni = "Sì" if pulizia_bagni_check else "No"
@@ -196,7 +214,10 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                         st.session_state.shifts.append(nuovo_turno)
                         st.session_state.shifts = sort_days(st.session_state.shifts)
                         st.session_state.need_regenerate = True
-                        st.success(f"✅ Turno aggiunto: {giorno} {data} - {luogo} {orario}")
+                        
+                        # Mostra il giorno in formato leggibile
+                        giorno_display = format_day_for_display(giorno_norm)
+                        st.success(f"✅ Turno aggiunto: {giorno_display} {data} - {luogo} {orario}")
                         st.rerun()
                     else:
                         st.error("⚠️ Inserisci almeno il luogo del turno")
