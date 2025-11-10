@@ -636,7 +636,9 @@ def write_shifts_to_pdf(shifts_or_tables, input_filename, surname):
         if isinstance(first, list) and (len(first) == 0 or isinstance(first[0], list)):
             tables = shifts_or_tables
             shifts = extract_shifts_for_person_hardcoded(tables, surname)
-
+    
+    shifts = sort_days(shifts)
+    
     # ora 'shifts' è garantito essere la lista di tuple dei turni (o [])
     # segue il codice esistente
 
