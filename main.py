@@ -4,6 +4,8 @@ import re
 import glob
 from datetime import datetime
 from fpdf import FPDF
+import sys
+print("write_shifts_to_pdf loaded", file=sys.stderr)
 
 # Variabile globale per controllare la modalità debug
 DEBUG_MODE = False
@@ -152,6 +154,14 @@ def read_pdf_tables(file_path):
     except Exception as e:
         print(f"Errore nella lettura del PDF: {str(e)}")
         return None
+        
+def parse_pdf(file_path):
+    """
+    Wrapper compatibile con l'interfaccia Streamlit.
+    Restituisce le tabelle estratte dal PDF (lista di tables).
+    """
+    return read_pdf_tables(file_path)
+
 
 def extract_days_from_header(tables):
     """Extract days and their numbers from the table header."""
@@ -608,8 +618,28 @@ def sort_days(shifts):
     
     return sorted(shifts, key=sort_key)
 
-def write_shifts_to_pdf(shifts, input_filename, surname):
-    """Write shifts to PDF file."""
+def write_shifts_to_pdf(shifts_or_tables, input_filename, surname):
+    """Write shifts to PDF file.
+    shifts_or_tables può essere:
+      - la lista di turni ([(giorno, data, luogo, orario, pulizia), ...]) oppure
+      - le tabelle estratte da pdfplumber (quello che restituisce parse_pdf)
+    Se riceve le tabelle, estrae i turni per il cognome fornito.
+    """
+    # Se l'argomento passato è probabilmente le tabelle estratte da pdfplumber,
+    # convertile in 'shifts' usando la funzione di estrazione esistente.
+    shifts = shifts_or_tables
+    if isinstance(shifts_or_tables, list) and shifts_or_tables:
+        # tipica struttura: lista di tabelle, ogni tabella è lista di righe (liste)
+        # riconosciamo le tabelle verificando che il primo elemento sia una lista
+        # e che i suoi elementi interni siano liste (righe).
+        first = shifts_or_tables[0]
+        if isinstance(first, list) and (len(first) == 0 or isinstance(first[0], list)):
+            tables = shifts_or_tables
+            shifts = extract_shifts_for_person_hardcoded(tables, surname)
+
+    # ora 'shifts' è garantito essere la lista di tuple dei turni (o [])
+    # segue il codice esistente
+
     # Estrai la parte finale del nome del file di input per creare il nome del file di output
     match = re.search(r"DAL.*\.pdf", input_filename, re.IGNORECASE)
     if match:
