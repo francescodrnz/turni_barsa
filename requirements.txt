@@ -1,3 +1,4 @@
 fpdf
+pdfplumber
 PyPDF2
 streamlit
