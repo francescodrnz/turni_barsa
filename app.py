@@ -113,31 +113,39 @@ def render_shifts_table(shifts, key_prefix=""):
 def add_shift_form():
     """Form per aggiungere un nuovo turno"""
     with st.expander("➕ Aggiungi nuovo turno", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            giorni = ['lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica']
-            giorno = st.selectbox("Giorno", giorni, key="new_day")
-            luogo = st.text_input("Luogo", key="new_location")
-        
-        with col2:
-            data = st.number_input("Data (giorno del mese)", min_value=1, max_value=31, value=1, key="new_date")
-            orario = st.text_input("Orario (es: 08:00-14:00)", key="new_time")
-        
-        pulizia_bagni = ""
-        if "giardini del castello" in luogo.lower():
-            pulizia_bagni = st.selectbox("Pulizia bagni", ["No", "Sì"], key="new_bagni")
-        
-        if st.button("Aggiungi turno", type="primary"):
-            if luogo:
-                giorno_norm = normalize_day_name(giorno)
-                nuovo_turno = (giorno_norm, str(data), luogo, orario, pulizia_bagni)
-                st.session_state.shifts.append(nuovo_turno)
-                st.session_state.shifts = sort_days(st.session_state.shifts)
-                st.success(f"✅ Turno aggiunto: {giorno} {data} - {luogo}")
-                st.rerun()
-            else:
-                st.error("⚠️ Inserisci almeno il luogo del turno")
+        with st.form(key="add_shift_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                giorni = ['lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica']
+                giorno = st.selectbox("Giorno", giorni)
+                luogo = st.text_input("Luogo", placeholder="Es: Giardini del Castello")
+            
+            with col2:
+                data = st.number_input("Data (giorno del mese)", min_value=1, max_value=31, value=1)
+                orario = st.text_input("Orario (es: 08:00-14:00)", placeholder="08:00-14:00")
+            
+            # Checkbox per pulizia bagni (visibile sempre ma rilevante solo per Giardini del Castello)
+            pulizia_bagni_check = st.checkbox("Pulizia bagni (solo per Giardini del Castello)", value=False)
+            
+            submitted = st.form_submit_button("Aggiungi turno", type="primary")
+            
+            if submitted:
+                if luogo:
+                    giorno_norm = normalize_day_name(giorno)
+                    # Determina il valore di pulizia bagni
+                    if "giardini del castello" in luogo.lower():
+                        pulizia_bagni = "Sì" if pulizia_bagni_check else "No"
+                    else:
+                        pulizia_bagni = ""
+                    
+                    nuovo_turno = (giorno_norm, str(data), luogo, orario, pulizia_bagni)
+                    st.session_state.shifts.append(nuovo_turno)
+                    st.session_state.shifts = sort_days(st.session_state.shifts)
+                    st.success(f"✅ Turno aggiunto: {giorno} {data} - {luogo} {orario}")
+                    st.rerun()
+                else:
+                    st.error("⚠️ Inserisci almeno il luogo del turno")
 
 # Main app
 init_session_state()
@@ -198,14 +206,19 @@ if st.session_state.pdf_processed and st.session_state.shifts:
         add_shift_form()
         
         st.markdown("---")
+        st.markdown(f"### 📋 Turni estratti ({len(st.session_state.shifts)} turni)")
         
         # Mostra e modifica turni esistenti
         edited_shifts = render_shifts_table(st.session_state.shifts, key_prefix="edit")
         
-        if st.button("💾 Salva modifiche", type="secondary"):
-            st.session_state.shifts = edited_shifts
-            st.success("✅ Modifiche salvate!")
-            st.rerun()
+        col_save, col_info = st.columns([1, 3])
+        with col_save:
+            if st.button("💾 Salva modifiche", type="secondary", use_container_width=True):
+                st.session_state.shifts = edited_shifts
+                st.success("✅ Modifiche salvate!")
+                st.rerun()
+        with col_info:
+            st.info("💡 Modifica i campi sopra e clicca 'Salva modifiche' per applicare le modifiche")
     
     with tab2:
         if st.session_state.input_pdf_bytes:
