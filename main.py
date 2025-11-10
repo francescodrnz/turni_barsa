@@ -5,7 +5,6 @@ import glob
 from datetime import datetime
 from fpdf import FPDF
 import sys
-print("write_shifts_to_pdf loaded", file=sys.stderr)
 
 # Variabile globale per controllare la modalità debug
 DEBUG_MODE = False
@@ -162,7 +161,6 @@ def parse_pdf(file_path):
     """
     return read_pdf_tables(file_path)
 
-
 def extract_days_from_header(tables):
     """Extract days and their numbers from the table header."""
     days = []
@@ -316,276 +314,6 @@ def has_giardini_castello(shifts):
             return True
     return False
 
-def print_shifts(shifts):
-    """Stampa i turni."""
-    has_bagni = has_giardini_castello(shifts)
-    
-    print("\nTurni attuali:")
-    print("-" * (100 if has_bagni else 80))
-    
-    if has_bagni:
-        print(f"{'N.':<3} {'Giorno':<12} {'Data':<6} {'Luogo':<35} {'Orario':<15} {'Pulizia bagni':<12}")
-    else:
-        print(f"{'N.':<3} {'Giorno':<12} {'Data':<6} {'Luogo':<35} {'Orario':<15}")
-    
-    print("-" * (100 if has_bagni else 80))
-    
-    for i, shift in enumerate(shifts, 1):
-        day, day_number, location, time = shift[:4]
-        pulizia_bagni = shift[4] if len(shift) > 4 else ""
-        
-        # Formatta il giorno per la visualizzazione
-        day_display = format_day_for_display(day)
-        
-        if has_bagni:
-            print(f"{i:<3} {day_display:<12} {day_number:<6} {location:<35} {time:<15} {pulizia_bagni:<12}")
-        else:
-            print(f"{i:<3} {day_display:<12} {day_number:<6} {location:<35} {time:<15}")
-    
-    print("-" * (100 if has_bagni else 80))
-
-def add_new_shift(shifts):
-    """Aggiunge un nuovo turno alla lista."""
-    print("\n--- Aggiunta nuovo turno ---")
-    
-    # Giorni validi
-    giorni_validi = ['lunedì', 'martedì', "mercoledi'", 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica']
-    
-    # Chiedi il giorno
-    while True:
-        giorno = input("Inserisci il giorno (lunedì, martedì, mercoledì, ecc.): ").strip()
-        giorno_normalizzato = normalize_day_name(giorno)
-        if giorno_normalizzato in ['lunedì', 'martedì', "mercoledi'", 'giovedì', 'venerdì', 'sabato', 'domenica']:
-            giorno = giorno_normalizzato
-            break
-        print("Giorno non valido. Usa uno dei seguenti: lunedì, martedì, mercoledì, giovedì, venerdì, sabato, domenica")
-    
-    # Chiedi la data
-    while True:
-        try:
-            data = input("Inserisci la data (numero del giorno): ").strip()
-            if data.isdigit() and 1 <= int(data) <= 31:
-                break
-            print("Data non valida. Inserisci un numero tra 1 e 31.")
-        except ValueError:
-            print("Data non valida. Inserisci un numero.")
-    
-    # Chiedi il luogo
-    luogo = input("Inserisci il luogo: ").strip()
-    if not luogo:
-        luogo = "Turno"
-    
-    # Chiedi l'orario
-    orario = input("Inserisci l'orario (es: 08:00-14:00, opzionale): ").strip()
-    
-    # Gestisci pulizia bagni se necessario
-    pulizia_bagni = ""
-    if "giardini del castello" in luogo.lower():
-        pulizia_bagni = input("Pulizia bagni (Sì/No): ").strip()
-        if not pulizia_bagni:
-            pulizia_bagni = "No"
-    
-    # Chiedi la posizione dove inserire il nuovo turno
-    while True:
-        try:
-            print(f"\nDove vuoi inserire il nuovo turno?")
-            print(f"• Inserisci un numero da 1 a {len(shifts)} per inserire in quella posizione")
-            print(f"• Inserisci {len(shifts) + 1} (o premi Invio) per aggiungere in fondo")
-            
-            posizione_input = input("Posizione: ").strip()
-            
-            if not posizione_input:
-                # Se l'utente preme solo Invio, aggiungi in fondo
-                posizione = len(shifts)
-                break
-            
-            posizione = int(posizione_input) - 1  # Converti a indice 0-based
-            
-            if 0 <= posizione <= len(shifts):
-                break
-            else:
-                print(f"Posizione non valida. Inserisci un numero tra 1 e {len(shifts) + 1}.")
-        except ValueError:
-            print("Input non valido. Inserisci un numero.")
-    
-    # Crea il nuovo turno
-    nuovo_turno = (giorno, data, luogo, orario, pulizia_bagni)
-    
-    # Inserisci il turno nella posizione specificata
-    shifts.insert(posizione, nuovo_turno)
-    
-    # Formatta il giorno per la visualizzazione
-    giorno_display = format_day_for_display(giorno)
-    
-    print(f"✓ Nuovo turno aggiunto alla posizione {posizione + 1}: {giorno_display} {data} - {luogo} - {orario}")
-    if pulizia_bagni:
-        print(f"  Pulizia bagni: {pulizia_bagni}")
-    
-    return shifts
-
-def modify_shifts(shifts):
-    """Permette di modificare i turni e aggiungere nuovi turni prima di stampare il PDF."""
-    has_bagni = has_giardini_castello(shifts)
-    
-    while True:
-        try:
-            print("\n--- OPZIONI ---")
-            print("• Inserisci il numero della riga da modificare (es: 1,2,3 per più righe)")
-            print("• Scrivi 'aggiungi' per aggiungere un nuovo turno")
-            print("• Scrivi '0' per finire")
-            
-            choice = input("\nCosa vuoi fare? ").strip()
-            
-            if choice == '0':
-                break
-            elif choice.lower() in ['aggiungi', 'add', 'nuovo']:
-                shifts = add_new_shift(shifts)
-                # Aggiorna has_bagni dopo l'aggiunta
-                has_bagni = has_giardini_castello(shifts)
-                print_shifts(shifts)
-                continue
-            
-            # Gestisce sia singole righe che righe multiple separate da virgola
-            row_numbers = []
-            if ',' in choice:
-                # Righe multiple
-                try:
-                    row_numbers = [int(x.strip()) - 1 for x in choice.split(',')]
-                except ValueError:
-                    print("Formato non valido. Usa numeri separati da virgole (es: 1,2,3)")
-                    continue
-            else:
-                # Singola riga
-                try:
-                    row_numbers = [int(choice) - 1]
-                except ValueError:
-                    print("Input non valido. Inserisci un numero, 'aggiungi' o '0'.")
-                    continue
-            
-            # Verifica che tutti i numeri di riga siano validi
-            valid_rows = []
-            for row_num in row_numbers:
-                if 0 <= row_num < len(shifts):
-                    valid_rows.append(row_num)
-                else:
-                    print(f"Numero riga {row_num + 1} non valido (deve essere tra 1 e {len(shifts)})")
-            
-            if not valid_rows:
-                print("Nessuna riga valida selezionata.")
-                continue
-            
-            # Se c'è più di una riga, chiedi se applicare le stesse modifiche a tutte
-            if len(valid_rows) > 1:
-                print(f"\nHai selezionato {len(valid_rows)} righe:")
-                for row_num in valid_rows:
-                    shift = shifts[row_num]
-                    day, day_number, location, time = shift[:4]
-                    day_display = format_day_for_display(day)
-                    print(f"  {row_num + 1}. {day_display} {day_number} - {location} - {time}")
-                
-                batch_mode = input("\nVuoi applicare le stesse modifiche a tutte le righe? (s/n): ").strip().lower()
-                batch_mode = batch_mode in ['s', 'si', 'sì', 'y', 'yes']
-            else:
-                batch_mode = False
-            
-            if batch_mode:
-                # Modalità batch: stesse modifiche per tutte le righe
-                print("\nInserisci le modifiche da applicare a tutte le righe selezionate:")
-                
-                # Prendi il primo turno come riferimento
-                first_shift = shifts[valid_rows[0]]
-                old_location = first_shift[2]
-                old_time = first_shift[3]
-                
-                print(f"Luogo di riferimento: '{old_location}'")
-                print(f"Orario di riferimento: '{old_time}'")
-                
-                # Modifica luogo
-                new_location = input(f"Nuovo luogo (premi Invio per mantenere invariato): ").strip()
-                
-                # Modifica orario
-                new_time = input(f"Nuovo orario (premi Invio per mantenere invariato): ").strip()
-                
-                # Gestisci pulizia bagni se necessario
-                new_pulizia_bagni = ""
-                if has_bagni:
-                    new_pulizia_bagni = input(f"Pulizia bagni per turni ai Giardini del Castello (Sì/No, vuoto per mantenere invariato): ").strip()
-                
-                # Applica le modifiche a tutte le righe selezionate
-                for row_num in valid_rows:
-                    shift = list(shifts[row_num])
-                    day, day_number, old_loc, old_tm = shift[:4]
-                    
-                    # Applica le modifiche solo se specificate
-                    final_location = new_location if new_location else old_loc
-                    final_time = new_time if new_time else old_tm
-                    
-                    # Gestisci pulizia bagni
-                    pulizia_bagni = ""
-                    if has_bagni:
-                        if "giardini del castello" in final_location.lower():
-                            if new_pulizia_bagni:
-                                pulizia_bagni = new_pulizia_bagni
-                            else:
-                                pulizia_bagni = shift[4] if len(shift) > 4 else "No"
-                        else:
-                            pulizia_bagni = shift[4] if len(shift) > 4 else ""
-                    
-                    # Aggiorna il turno
-                    shifts[row_num] = (day, day_number, final_location, final_time, pulizia_bagni)
-                    
-                    day_display = format_day_for_display(day)
-                    print(f"✓ Riga {row_num + 1} aggiornata: {day_display} {day_number} - {final_location} - {final_time}")
-                    if has_bagni and pulizia_bagni:
-                        print(f"  Pulizia bagni: {pulizia_bagni}")
-            
-            else:
-                # Modalità individuale: modifica ogni riga separatamente
-                for row_num in valid_rows:
-                    shift = list(shifts[row_num])
-                    day, day_number, old_location, old_time = shift[:4]
-                    
-                    day_display = format_day_for_display(day)
-                    print(f"\n--- Modifica turno per {day_display} {day_number} (riga {row_num + 1}) ---")
-                    print(f"Luogo attuale: '{old_location}'")
-                    print(f"Orario attuale: '{old_time}'")
-                    
-                    # Modifica luogo
-                    new_location = input(f"Nuovo luogo (premi Invio per mantenere '{old_location}'): ").strip()
-                    if not new_location:
-                        new_location = old_location
-                    
-                    # Modifica orario
-                    new_time = input(f"Nuovo orario (premi Invio per mantenere '{old_time}'): ").strip()
-                    if not new_time:
-                        new_time = old_time
-                    
-                    # Gestisci pulizia bagni se necessario
-                    pulizia_bagni = ""
-                    if has_bagni and "giardini del castello" in new_location.lower():
-                        old_pulizia = shift[4] if len(shift) > 4 else "No"
-                        pulizia_bagni = input(f"Pulizia bagni (Sì/No, premi Invio per '{old_pulizia}'): ").strip()
-                        if not pulizia_bagni:
-                            pulizia_bagni = old_pulizia
-                    elif has_bagni:
-                        pulizia_bagni = shift[4] if len(shift) > 4 else ""
-                    
-                    # Aggiorna il turno
-                    shifts[row_num] = (day, day_number, new_location, new_time, pulizia_bagni)
-                    
-                    print(f"✓ Turno aggiornato: {day_display} {day_number} - {new_location} - {new_time}")
-                    if has_bagni and pulizia_bagni:
-                        print(f"  Pulizia bagni: {pulizia_bagni}")
-            
-            # Mostra i turni aggiornati
-            print_shifts(shifts)
-                
-        except Exception as e:
-            print(f"Errore durante la modifica: {e}")
-            print("Riprova con un formato valido.")
-    
-    return shifts
-    
 def sort_days(shifts):
     """Sort shifts by day of the week and then by time."""
     day_order = {
@@ -618,31 +346,19 @@ def sort_days(shifts):
     
     return sorted(shifts, key=sort_key)
 
-def write_shifts_to_pdf(shifts_or_tables, input_filename, surname):
-    """Write shifts to PDF file.
-    shifts_or_tables può essere:
-      - la lista di turni ([(giorno, data, luogo, orario, pulizia), ...]) oppure
-      - le tabelle estratte da pdfplumber (quello che restituisce parse_pdf)
-    Se riceve le tabelle, estrae i turni per il cognome fornito.
+def write_shifts_to_pdf(shifts, input_filename, surname):
     """
-    # Se l'argomento passato è probabilmente le tabelle estratte da pdfplumber,
-    # convertile in 'shifts' usando la funzione di estrazione esistente.
-    shifts = shifts_or_tables
-    if isinstance(shifts_or_tables, list) and shifts_or_tables:
-        # tipica struttura: lista di tabelle, ogni tabella è lista di righe (liste)
-        # riconosciamo le tabelle verificando che il primo elemento sia una lista
-        # e che i suoi elementi interni siano liste (righe).
-        first = shifts_or_tables[0]
-        if isinstance(first, list) and (len(first) == 0 or isinstance(first[0], list)):
-            tables = shifts_or_tables
-            shifts = extract_shifts_for_person_hardcoded(tables, surname)
+    Write shifts to PDF file.
     
+    Args:
+        shifts: Lista di turni [(giorno, data, luogo, orario, pulizia), ...]
+        input_filename: Nome del file PDF di input (usato per generare il nome output)
+        surname: Cognome della persona
+    """
+    # Ordina i turni
     shifts = sort_days(shifts)
     
-    # ora 'shifts' è garantito essere la lista di tuple dei turni (o [])
-    # segue il codice esistente
-
-    # Estrai la parte finale del nome del file di input per creare il nome del file di output
+    # Genera il nome del file di output
     match = re.search(r"DAL.*\.pdf", input_filename, re.IGNORECASE)
     if match:
         output_filename = f"Turni {surname} " + match.group(0).lower()
@@ -726,6 +442,260 @@ def write_shifts_to_pdf(shifts_or_tables, input_filename, surname):
     # Salva il PDF
     pdf.output(output_filename)
     print(f"File '{output_filename}' creato con successo!")
+    return output_filename
+
+# Le funzioni CLI rimangono per uso locale
+def print_shifts(shifts):
+    """Stampa i turni (solo per CLI)."""
+    has_bagni = has_giardini_castello(shifts)
+    
+    print("\nTurni attuali:")
+    print("-" * (100 if has_bagni else 80))
+    
+    if has_bagni:
+        print(f"{'N.':<3} {'Giorno':<12} {'Data':<6} {'Luogo':<35} {'Orario':<15} {'Pulizia bagni':<12}")
+    else:
+        print(f"{'N.':<3} {'Giorno':<12} {'Data':<6} {'Luogo':<35} {'Orario':<15}")
+    
+    print("-" * (100 if has_bagni else 80))
+    
+    for i, shift in enumerate(shifts, 1):
+        day, day_number, location, time = shift[:4]
+        pulizia_bagni = shift[4] if len(shift) > 4 else ""
+        
+        # Formatta il giorno per la visualizzazione
+        day_display = format_day_for_display(day)
+        
+        if has_bagni:
+            print(f"{i:<3} {day_display:<12} {day_number:<6} {location:<35} {time:<15} {pulizia_bagni:<12}")
+        else:
+            print(f"{i:<3} {day_display:<12} {day_number:<6} {location:<35} {time:<15}")
+    
+    print("-" * (100 if has_bagni else 80))
+
+def add_new_shift(shifts):
+    """Aggiunge un nuovo turno alla lista (solo per CLI)."""
+    print("\n--- Aggiunta nuovo turno ---")
+    
+    # Giorni validi
+    giorni_validi = ['lunedì', 'martedì', "mercoledi'", 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica']
+    
+    # Chiedi il giorno
+    while True:
+        giorno = input("Inserisci il giorno (lunedì, martedì, mercoledì, ecc.): ").strip()
+        giorno_normalizzato = normalize_day_name(giorno)
+        if giorno_normalizzato in ['lunedì', 'martedì', "mercoledi'", 'giovedì', 'venerdì', 'sabato', 'domenica']:
+            giorno = giorno_normalizzato
+            break
+        print("Giorno non valido. Usa uno dei seguenti: lunedì, martedì, mercoledì, giovedì, venerdì, sabato, domenica")
+    
+    # Chiedi la data
+    while True:
+        try:
+            data = input("Inserisci la data (numero del giorno): ").strip()
+            if data.isdigit() and 1 <= int(data) <= 31:
+                break
+            print("Data non valida. Inserisci un numero tra 1 e 31.")
+        except ValueError:
+            print("Data non valida. Inserisci un numero.")
+    
+    # Chiedi il luogo
+    luogo = input("Inserisci il luogo: ").strip()
+    if not luogo:
+        luogo = "Turno"
+    
+    # Chiedi l'orario
+    orario = input("Inserisci l'orario (es: 08:00-14:00, opzionale): ").strip()
+    
+    # Gestisci pulizia bagni se necessario
+    pulizia_bagni = ""
+    if "giardini del castello" in luogo.lower():
+        pulizia_bagni = input("Pulizia bagni (Sì/No): ").strip()
+        if not pulizia_bagni:
+            pulizia_bagni = "No"
+    
+    # Chiedi la posizione dove inserire il nuovo turno
+    while True:
+        try:
+            print(f"\nDove vuoi inserire il nuovo turno?")
+            print(f"• Inserisci un numero da 1 a {len(shifts)} per inserire in quella posizione")
+            print(f"• Inserisci {len(shifts) + 1} (o premi Invio) per aggiungere in fondo")
+            
+            posizione_input = input("Posizione: ").strip()
+            
+            if not posizione_input:
+                # Se l'utente preme solo Invio, aggiungi in fondo
+                posizione = len(shifts)
+                break
+            
+            posizione = int(posizione_input) - 1  # Converti a indice 0-based
+            
+            if 0 <= posizione <= len(shifts):
+                break
+            else:
+                print(f"Posizione non valida. Inserisci un numero tra 1 e {len(shifts) + 1}.")
+        except ValueError:
+            print("Input non valido. Inserisci un numero.")
+    
+    # Crea il nuovo turno
+    nuovo_turno = (giorno, data, luogo, orario, pulizia_bagni)
+    
+    # Inserisci il turno nella posizione specificata
+    shifts.insert(posizione, nuovo_turno)
+    
+    # Formatta il giorno per la visualizzazione
+    giorno_display = format_day_for_display(giorno)
+    
+    print(f"✓ Nuovo turno aggiunto alla posizione {posizione + 1}: {giorno_display} {data} - {luogo} - {orario}")
+    if pulizia_bagni:
+        print(f"  Pulizia bagni: {pulizia_bagni}")
+    
+    return shifts
+
+def modify_shifts(shifts):
+    """Permette di modificare i turni (solo per CLI)."""
+    has_bagni = has_giardini_castello(shifts)
+    
+    while True:
+        try:
+            print("\n--- OPZIONI ---")
+            print("• Inserisci il numero della riga da modificare (es: 1,2,3 per più righe)")
+            print("• Scrivi 'aggiungi' per aggiungere un nuovo turno")
+            print("• Scrivi '0' per finire")
+            
+            choice = input("\nCosa vuoi fare? ").strip()
+            
+            if choice == '0':
+                break
+            elif choice.lower() in ['aggiungi', 'add', 'nuovo']:
+                shifts = add_new_shift(shifts)
+                has_bagni = has_giardini_castello(shifts)
+                print_shifts(shifts)
+                continue
+            
+            # Gestisce sia singole righe che righe multiple separate da virgola
+            row_numbers = []
+            if ',' in choice:
+                try:
+                    row_numbers = [int(x.strip()) - 1 for x in choice.split(',')]
+                except ValueError:
+                    print("Formato non valido. Usa numeri separati da virgole (es: 1,2,3)")
+                    continue
+            else:
+                try:
+                    row_numbers = [int(choice) - 1]
+                except ValueError:
+                    print("Input non valido. Inserisci un numero, 'aggiungi' o '0'.")
+                    continue
+            
+            # Verifica che tutti i numeri di riga siano validi
+            valid_rows = []
+            for row_num in row_numbers:
+                if 0 <= row_num < len(shifts):
+                    valid_rows.append(row_num)
+                else:
+                    print(f"Numero riga {row_num + 1} non valido (deve essere tra 1 e {len(shifts)})")
+            
+            if not valid_rows:
+                print("Nessuna riga valida selezionata.")
+                continue
+            
+            # Se c'è più di una riga, chiedi se applicare le stesse modifiche a tutte
+            if len(valid_rows) > 1:
+                print(f"\nHai selezionato {len(valid_rows)} righe:")
+                for row_num in valid_rows:
+                    shift = shifts[row_num]
+                    day, day_number, location, time = shift[:4]
+                    day_display = format_day_for_display(day)
+                    print(f"  {row_num + 1}. {day_display} {day_number} - {location} - {time}")
+                
+                batch_mode = input("\nVuoi applicare le stesse modifiche a tutte le righe? (s/n): ").strip().lower()
+                batch_mode = batch_mode in ['s', 'si', 'sì', 'y', 'yes']
+            else:
+                batch_mode = False
+            
+            if batch_mode:
+                # Modalità batch
+                print("\nInserisci le modifiche da applicare a tutte le righe selezionate:")
+                
+                first_shift = shifts[valid_rows[0]]
+                old_location = first_shift[2]
+                old_time = first_shift[3]
+                
+                print(f"Luogo di riferimento: '{old_location}'")
+                print(f"Orario di riferimento: '{old_time}'")
+                
+                new_location = input(f"Nuovo luogo (premi Invio per mantenere invariato): ").strip()
+                new_time = input(f"Nuovo orario (premi Invio per mantenere invariato): ").strip()
+                
+                new_pulizia_bagni = ""
+                if has_bagni:
+                    new_pulizia_bagni = input(f"Pulizia bagni per turni ai Giardini del Castello (Sì/No, vuoto per mantenere invariato): ").strip()
+                
+                for row_num in valid_rows:
+                    shift = list(shifts[row_num])
+                    day, day_number, old_loc, old_tm = shift[:4]
+                    
+                    final_location = new_location if new_location else old_loc
+                    final_time = new_time if new_time else old_tm
+                    
+                    pulizia_bagni = ""
+                    if has_bagni:
+                        if "giardini del castello" in final_location.lower():
+                            if new_pulizia_bagni:
+                                pulizia_bagni = new_pulizia_bagni
+                            else:
+                                pulizia_bagni = shift[4] if len(shift) > 4 else "No"
+                        else:
+                            pulizia_bagni = shift[4] if len(shift) > 4 else ""
+                    
+                    shifts[row_num] = (day, day_number, final_location, final_time, pulizia_bagni)
+                    
+                    day_display = format_day_for_display(day)
+                    print(f"✓ Riga {row_num + 1} aggiornata: {day_display} {day_number} - {final_location} - {final_time}")
+                    if has_bagni and pulizia_bagni:
+                        print(f"  Pulizia bagni: {pulizia_bagni}")
+            
+            else:
+                for row_num in valid_rows:
+                    shift = list(shifts[row_num])
+                    day, day_number, old_location, old_time = shift[:4]
+                    
+                    day_display = format_day_for_display(day)
+                    print(f"\n--- Modifica turno per {day_display} {day_number} (riga {row_num + 1}) ---")
+                    print(f"Luogo attuale: '{old_location}'")
+                    print(f"Orario attuale: '{old_time}'")
+                    
+                    new_location = input(f"Nuovo luogo (premi Invio per mantenere '{old_location}'): ").strip()
+                    if not new_location:
+                        new_location = old_location
+                    
+                    new_time = input(f"Nuovo orario (premi Invio per mantenere '{old_time}'): ").strip()
+                    if not new_time:
+                        new_time = old_time
+                    
+                    pulizia_bagni = ""
+                    if has_bagni and "giardini del castello" in new_location.lower():
+                        old_pulizia = shift[4] if len(shift) > 4 else "No"
+                        pulizia_bagni = input(f"Pulizia bagni (Sì/No, premi Invio per '{old_pulizia}'): ").strip()
+                        if not pulizia_bagni:
+                            pulizia_bagni = old_pulizia
+                    elif has_bagni:
+                        pulizia_bagni = shift[4] if len(shift) > 4 else ""
+                    
+                    shifts[row_num] = (day, day_number, new_location, new_time, pulizia_bagni)
+                    
+                    print(f"✓ Turno aggiornato: {day_display} {day_number} - {new_location} - {new_time}")
+                    if has_bagni and pulizia_bagni:
+                        print(f"  Pulizia bagni: {pulizia_bagni}")
+            
+            print_shifts(shifts)
+                
+        except Exception as e:
+            print(f"Errore durante la modifica: {e}")
+            print("Riprova con un formato valido.")
+    
+    return shifts
 
 def find_pdf_file():
     """Cerca un file PDF che inizia con 'servizio custodia' nella cartella corrente."""
@@ -742,10 +712,9 @@ def find_pdf_file():
     return pdf_files
 
 def main():
-    """Main function."""
+    """Main function per uso CLI."""
     global DEBUG_MODE
     
-    # Chiedi all'utente se vuole attivare la modalità debug
     debug_choice = input("Vuoi attivare la modalità debug? (s/n): ").strip().lower()
     DEBUG_MODE = debug_choice in ['s', 'si', 'sì', 'y', 'yes']
     
@@ -753,7 +722,6 @@ def main():
         print("Modalità debug attivata.")
     print()
     
-    # Cerca automaticamente file PDF che iniziano con "servizio custodia"
     pdf_files = find_pdf_file()
     pdf_path = None
     
@@ -783,29 +751,24 @@ def main():
     
     surname = input("Inserisci il cognome della persona da cercare: ").strip()
     
-    # Read tables from PDF
     tables = read_pdf_tables(pdf_path)
     if tables is None:
         return
     
-    # Extract and write the shifts using hardcoded structure
     shifts = extract_shifts_for_person_hardcoded(tables, surname)
     
     if not shifts:
         print(f"\nNessun turno trovato per {surname}")
         return
     
-    # Ordinare i turni prima di scrivere nel PDF
     shifts_sorted = sort_days(shifts)
     
-    # Chiedi se sono necessarie modifiche
     print_shifts(shifts_sorted)
     
     modifica = input("\nSono necessarie modifiche ai turni? (s/n): ").strip().lower()
     if modifica in ['s', 'si', 'sì', 'y', 'yes']:
         shifts_sorted = modify_shifts(shifts_sorted)
     
-    # Scrivi i turni nel file PDF
     write_shifts_to_pdf(shifts_sorted, pdf_path, surname)
 
     input("Premi Invio per uscire...") 
