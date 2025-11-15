@@ -29,9 +29,20 @@ def get_output_filename(input_filename, surname):
         return f"Turni {surname}.pdf"
 
 def display_pdf(pdf_bytes, title="PDF"):
-    """Mostra un PDF nel browser usando un iframe"""
+    """Mostra un PDF nel browser usando PDF.js di Mozilla"""
     base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+    
+    # Usa PDF.js viewer di Mozilla (compatibile con tutti i browser)
+    pdf_display = f"""
+    <iframe 
+        src="https://mozilla.github.io/pdf.js/web/viewer.html?file=data:application/pdf;base64,{base64_pdf}"
+        width="100%" 
+        height="800" 
+        type="application/pdf"
+        style="border: none;">
+    </iframe>
+    """
+    
     st.markdown(f"### {title}")
     st.markdown(pdf_display, unsafe_allow_html=True)
 
