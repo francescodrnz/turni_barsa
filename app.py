@@ -54,7 +54,7 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
     try:
         # Converti PDF in immagini ad alta risoluzione
         with st.spinner("Caricamento anteprima ad alta qualità..."):
-            images = convert_from_bytes(pdf_bytes, dpi=1000)
+            images = convert_from_bytes(pdf_bytes, dpi=750)
         
         # Mostra ogni pagina come immagine con larghezza personalizzabile
         for i, image in enumerate(images):
