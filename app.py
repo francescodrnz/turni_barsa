@@ -194,7 +194,8 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                 title=None,
                 filename=st.session_state.output_filename,
                 show_download=True,
-                width_percentage=70
+                width_percentage=70,
+                highlight_text=None
             )
     
     with tab2:
