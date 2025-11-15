@@ -32,7 +32,7 @@ def get_output_filename(input_filename, surname):
     else:
         return f"Turni {surname}.pdf"
 
-def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width_percentage=100):
+def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width_percentage=100, highlight_text=None):
     """Mostra un PDF convertendolo in immagini (funziona su tutti i browser)"""
     if title:
         st.markdown(f"### {title}")
