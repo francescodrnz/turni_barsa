@@ -31,23 +31,25 @@ def get_output_filename(input_filename, surname):
     else:
         return f"Turni {surname}.pdf"
 
-def display_pdf(pdf_bytes, title="PDF", filename="document.pdf"):
+def display_pdf(pdf_bytes, title=None, filename=None, show_download=False):
     """Mostra un PDF convertendolo in immagini (funziona su tutti i browser)"""
-    st.markdown(f"### {title}")
+    if title:
+        st.markdown(f"### {title}")
     
-    # Pulsante download PRIMA dell'anteprima
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.download_button(
-            label="⬇️ Scarica PDF",
-            data=pdf_bytes,
-            file_name=filename,
-            mime="application/pdf",
-            type="primary",
-            use_container_width=True
-        )
-    
-    st.markdown("---")
+    # Pulsante download solo se richiesto
+    if show_download and filename:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.download_button(
+                label="⬇️ Scarica PDF",
+                data=pdf_bytes,
+                file_name=filename,
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True
+            )
+        
+        st.markdown("---")
     
     try:
         # Converti PDF in immagini ad alta risoluzione
@@ -62,7 +64,8 @@ def display_pdf(pdf_bytes, title="PDF", filename="document.pdf"):
     
     except Exception as e:
         st.error(f"Errore nella visualizzazione del PDF: {str(e)}")
-        st.info("💡 Usa il pulsante di download qui sopra per aprire il PDF esternamente.")
+        if show_download:
+            st.info("💡 Usa il pulsante di download qui sopra per aprire il PDF esternamente.")
 
 def init_session_state():
     """Inizializza lo stato della sessione"""
@@ -178,9 +181,10 @@ if st.session_state.pdf_processed and st.session_state.shifts:
         # Mostra anteprima
         if st.session_state.generated_pdf_bytes:
             display_pdf(
-                st.session_state.generated_pdf_bytes, 
-                "Anteprima PDF",
-                st.session_state.output_filename
+                st.session_state.generated_pdf_bytes,
+                title=None,
+                filename=st.session_state.output_filename,
+                show_download=True
             )
     
     with tab2:
@@ -349,9 +353,10 @@ if st.session_state.pdf_processed and st.session_state.shifts:
     with tab3:
         if st.session_state.input_pdf_bytes:
             display_pdf(
-                st.session_state.input_pdf_bytes, 
-                "PDF di Input",
-                st.session_state.input_filename
+                st.session_state.input_pdf_bytes,
+                title=None,
+                filename=None,
+                show_download=False
             )
 
 # Footer
