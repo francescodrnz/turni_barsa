@@ -33,13 +33,11 @@ def get_output_filename(input_filename, surname):
         return f"Turni {surname}.pdf"
 
 def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width_percentage=100, highlight_text=None):
-    """Mostra un PDF convertendolo in immagini (funziona su tutti i browser).
-    Se highlight_text è fornito, evidenzia tutte le occorrenze (case-insensitive) prima di convertire le pagine in immagini.
-    """
+    """Mostra un PDF convertendolo in immagini ed evidenzia highlight_text se presente."""
     if title:
         st.markdown(f"### {title}")
-    
-    # Pulsante download solo se richiesto
+
+    # download opzionale
     if show_download and filename:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -52,10 +50,10 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                 use_container_width=True
             )
         st.markdown("---")
-    
+
     try:
-        # Se non serve evidenziare, usa convert_from_bytes come prima (più semplice)
-        if not highlight_text:
+        # Caso semplice: nessuna evidenziazione -> pdf2image
+        if not highlight_text or highlight_text.strip() == "":
             with st.spinner("Caricamento anteprima ad alta qualità..."):
                 images = convert_from_bytes(pdf_bytes, dpi=300)
             for i, image in enumerate(images):
@@ -70,8 +68,7 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                     st.markdown("---")
             return
 
-        # Se serve evidenziare, apri con PyMuPDF e renderizza pagina per pagina,
-        # evidenziando le parole che corrispondono (case-insensitive).
+        # Caso con evidenziazione -> PyMuPDF
         target = highlight_text.strip().lower()
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         dpi = 300
@@ -79,30 +76,35 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
 
         for i in range(doc.page_count):
             page = doc.load_page(i)
-            # render della pagina a pixmap
+
+            # Render pagina
             pix = page.get_pixmap(matrix=mat, alpha=False)
             mode = "RGB" if pix.n < 4 else "RGBA"
             img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
-            # overlay RGBA per disegnare evidenziatori semi-trasparenti
+
+            # Overlay
             overlay = Image.new("RGBA", img.size, (255, 255, 255, 0))
             draw = ImageDraw.Draw(overlay)
 
-            # cerca parole e confronta in lowercase
-            words = page.get_text("words")  # lista di tuple (x0, y0, x1, y1, "word", ...)
-            for w in words:
-                word_text = w[4] if len(w) > 4 else ""
-                if word_text.strip().lower() == target:
-                    r = fitz.Rect(w[0], w[1], w[2], w[3])
-                    # scala la bbox alla dimensione del pixmap
-                    r *= mat
-                    # disegna rettangolo semitrasparente (giallo)
-                    draw.rectangle([r.x0, r.y0, r.x1, r.y1], fill=(255, 230, 0, 120), outline=None)
+            # Parole dalla pagina
+            words = page.get_text("words")
 
-            # composita overlay su immagine di base
+            for w in words:
+                word_text = w[4].strip().lower()
+                if word_text == target:
+                    rect = fitz.Rect(w[0], w[1], w[2], w[3])
+                    rect *= mat   # scala a pixel reali
+
+                    draw.rectangle(
+                        [rect.x0, rect.y0, rect.x1, rect.y1],
+                        fill=(255, 230, 0, 120)
+                    )
+
+            # composizione immagine + overlay
             img_rgba = img.convert("RGBA")
             highlighted = Image.alpha_composite(img_rgba, overlay)
 
-            # mostra immagine risultante
+            # Display
             if width_percentage < 100:
                 left_margin = (100 - width_percentage) / 2
                 col1, col2, col3 = st.columns([left_margin, width_percentage, left_margin])
@@ -110,16 +112,16 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                     st.image(highlighted, use_column_width=True, caption=f"Pagina {i+1}")
             else:
                 st.image(highlighted, use_column_width=True, caption=f"Pagina {i+1}")
-            
+
             if i < doc.page_count - 1:
                 st.markdown("---")
-        
+
         doc.close()
 
     except Exception as e:
         st.error(f"Errore nella visualizzazione del PDF: {str(e)}")
         if show_download:
-            st.info("💡 Usa il pulsante di download qui sopra per aprire il PDF esternamente.")
+            st.info("Apri il PDF esternamente per verificare il contenuto.")
 
 def init_session_state():
     """Inizializza lo stato della sessione"""
