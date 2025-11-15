@@ -98,17 +98,17 @@ def get_hardcoded_structure():
         
         # Sede Bar.S.A.
         39: ("Sede Bar.S.A.", "00:00-06:20", ""),
-        40: ("Sede Bar.S.A.", "06:00-12:20", ""),
-        41: ("Sede Bar.S.A.", "12:00-18:20", ""),
-        42: ("Sede Bar.S.A.", "13:00-19:20", ""),
-        43: ("Sede Bar.S.A.", "18:00-24:00", ""),
-        44: ("Sede Bar.S.A.", "00:00-08:00", ""),
-        45: ("Sede Bar.S.A.", "08:00-16:00", ""),
-        46: ("Sede Bar.S.A.", "16:00-24:00", ""),
+        40: ("Sede Bar.S.A.", "06:40-13:00", ""),
+        41: ("Sede Bar.S.A.", "11:40-18:00", ""),
+        42: ("Sede Bar.S.A.", "18:00-24:00", ""),
+        43: ("Sede Bar.S.A.", "00:00-08:00", ""),
+        44: ("Sede Bar.S.A.", "08:00-16:00", ""),
+        45: ("Sede Bar.S.A.", "16:00-24:00", ""),
         
-        48: ("Distribuzione Prodotti", "15:00-20:00", ""),
+        47: ("Distribuzione Prodotti", "15:00-20:00", ""),
         
         # Riposo
+        49: ("Riposo", "", ""),
         50: ("Riposo", "", ""),
         51: ("Riposo", "", ""),
         52: ("Riposo", "", ""),
@@ -118,6 +118,7 @@ def get_hardcoded_structure():
         56: ("Riposo", "", ""),
         
         # 2° Riposo
+        57: ("2° Riposo", "", ""),
         58: ("2° Riposo", "", ""),
         59: ("2° Riposo", "", ""),
         60: ("2° Riposo", "", ""),
@@ -125,18 +126,24 @@ def get_hardcoded_structure():
         62: ("2° Riposo", "", ""),
         
         # Ferie
+        63: ("Ferie", "", ""),
         64: ("Ferie", "", ""),
         65: ("Ferie", "", ""),
         66: ("Ferie", "", ""),
         67: ("Ferie", "", ""),
         
         # Malattia
+        68: ("Malattia", "", ""),
         69: ("Malattia", "", ""),
         70: ("Malattia", "", ""),
         
         # Permessi Vari
         72: ("Permessi Vari", "", ""),
         73: ("Permessi Vari", "", ""),
+        74: ("Permessi Vari", "", ""),
+        75: ("Permessi Vari", "", ""),
+        76: ("Permessi Vari", "", ""),
+        77: ("Permessi Vari", "", ""),
     }
     
     return structure
@@ -266,7 +273,7 @@ def extract_shifts_for_person_hardcoded(tables, surname):
                 debug_print(f"Debug: Struttura hardcoded - Location: '{location}', Time: '{time_slot}', Notes: '{notes}'")
             else:
                 debug_print(f"Debug: Struttura hardcoded non definita per riga {structure_idx}, uso fallback")
-                location = "Turno non definito"
+                location = "Riposo"
                 time_slot = ""
                 notes = ""
             

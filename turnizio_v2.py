@@ -258,7 +258,7 @@ def extract_shifts_for_person_hardcoded(tables, surname):
                 debug_print(f"Debug: Struttura hardcoded - Location: '{location}', Time: '{time_slot}', Notes: '{notes}'")
             else:
                 debug_print(f"Debug: Struttura hardcoded non definita per riga {structure_idx}, uso fallback")
-                location = "Turno non definito"
+                location = "Riposo"
                 time_slot = ""
                 notes = ""
             
