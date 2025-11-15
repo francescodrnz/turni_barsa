@@ -54,7 +54,7 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
     try:
         # Converti PDF in immagini ad alta risoluzione
         with st.spinner("Caricamento anteprima ad alta qualità..."):
-            images = convert_from_bytes(pdf_bytes, dpi=400)
+            images = convert_from_bytes(pdf_bytes, dpi=300)
         
         # Mostra ogni pagina come immagine con larghezza personalizzabile
         for i, image in enumerate(images):
@@ -63,9 +63,9 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                 left_margin = (100 - width_percentage) / 2
                 col1, col2, col3 = st.columns([left_margin, width_percentage, left_margin])
                 with col2:
-                    st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
+                    st.image(image, width="stretch", caption=f"Pagina {i+1}")
             else:
-                st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
+                st.image(image, width="stretch", caption=f"Pagina {i+1}")
             
             if i < len(images) - 1:
                 st.markdown("---")
@@ -232,7 +232,7 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                     # Checkbox per pulizia bagni
                     pulizia_bagni_check = st.checkbox("Pulizia bagni (solo per Giardini del Castello)", value=False)
                 
-                submitted = st.form_submit_button("Aggiungi turno", type="primary")
+                submitted = st.form_submit_button("Aggiungi turno", type="primary", width="stretch")
                 
                 if submitted:
                     if luogo:
@@ -352,7 +352,7 @@ if st.session_state.pdf_processed and st.session_state.shifts:
             # Pulsante per salvare e rigenerare
             col_save, col_info = st.columns([1, 3])
             with col_save:
-                if st.button("💾 Salva e Rigenera PDF", type="secondary", use_container_width=True):
+                if st.button("💾 Salva e Rigenera PDF", type="secondary", width="stretch"):
                     st.session_state.need_regenerate = True
                     st.success("✅ Modifiche salvate! Vai alla tab 'PDF Generato' per vedere le modifiche.")
                     st.rerun()
