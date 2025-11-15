@@ -49,7 +49,7 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                 file_name=filename,
                 mime="application/pdf",
                 type="primary",
-                use_container_width=True
+                width="stretch"
             )
         st.markdown("---")
 
@@ -62,9 +62,9 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                     left_margin = (100 - width_percentage) / 2
                     col1, col2, col3 = st.columns([left_margin, width_percentage, left_margin])
                     with col2:
-                        st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
+                        st.image(image, width="stretch", caption=f"Pagina {i+1}")
                 else:
-                    st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
+                    st.image(image, width="stretch", caption=f"Pagina {i+1}")
                 if i < len(images) - 1:
                     st.markdown("---")
             return
@@ -85,7 +85,7 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
             with st.spinner("Caricamento anteprima..."):
                 images = convert_from_bytes(pdf_bytes, dpi=300)
             for i, image in enumerate(images):
-                st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
+                st.image(image, width="stretch", caption=f"Pagina {i+1}")
                 if i < len(images) - 1:
                     st.markdown("---")
             return
@@ -152,9 +152,9 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                 left_margin = (100 - width_percentage) / 2
                 col1, col2, col3 = st.columns([left_margin, width_percentage, left_margin])
                 with col2:
-                    st.image(highlighted, use_container_width=True, caption=f"Pagina {i+1}")
+                    st.image(highlighted, width="stretch", caption=f"Pagina {i+1}")
             else:
-                st.image(highlighted, use_container_width=True, caption=f"Pagina {i+1}")
+                st.image(highlighted, width="stretch", caption=f"Pagina {i+1}")
 
             if i < doc.page_count - 1:
                 st.markdown("---")
