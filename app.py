@@ -16,6 +16,7 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageDraw
 import io
 import fitz  # PyMuPDF
+import re
 
 # Configurazione pagina
 st.set_page_config(
@@ -33,11 +34,12 @@ def get_output_filename(input_filename, surname):
         return f"Turni {surname}.pdf"
 
 def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width_percentage=100, highlight_text=None):
-    """Mostra un PDF convertendolo in immagini ed evidenzia highlight_text se presente."""
+    """Mostra un PDF convertendolo in immagini ed evidenzia highlight_text se presente.
+    Se highlight_text contiene più parole, prova prima a evidenziare la sequenza completa;
+    se non trova nulla, evidenzia la prima parola."""
     if title:
         st.markdown(f"### {title}")
 
-    # download opzionale
     if show_download and filename:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -52,7 +54,6 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
         st.markdown("---")
 
     try:
-        # Caso semplice: nessuna evidenziazione -> pdf2image
         if not highlight_text or highlight_text.strip() == "":
             with st.spinner("Caricamento anteprima ad alta qualità..."):
                 images = convert_from_bytes(pdf_bytes, dpi=300)
@@ -61,15 +62,37 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                     left_margin = (100 - width_percentage) / 2
                     col1, col2, col3 = st.columns([left_margin, width_percentage, left_margin])
                     with col2:
-                        st.image(image, use_column_width=True, caption=f"Pagina {i+1}")
+                        st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
                 else:
-                    st.image(image, use_column_width=True, caption=f"Pagina {i+1}")
+                    st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
                 if i < len(images) - 1:
                     st.markdown("---")
             return
 
-        # Caso con evidenziazione -> PyMuPDF
-        target = highlight_text.strip().lower()
+        # normalizzazione parola (rimuove punteggiatura ma mantiene lettere accentate)
+        def normalize_token(s: str) -> str:
+            s = s.strip()
+            # rimuove caratteri non alfanumerici (preserva lettere accentate)
+            s = re.sub(r"[^\wÀ-ÖØ-öø-ÿ]+", "", s, flags=re.UNICODE)
+            return s.lower()
+
+        target_raw = highlight_text.strip()
+        target_tokens = [t for t in target_raw.split() if t.strip() != ""]
+        target_tokens = [normalize_token(t) for t in target_tokens if normalize_token(t) != ""]
+
+        # se, dopo normalizzazione, non abbiamo token, fallback al comportamento senza highlight
+        if not target_tokens:
+            with st.spinner("Caricamento anteprima..."):
+                images = convert_from_bytes(pdf_bytes, dpi=300)
+            for i, image in enumerate(images):
+                st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
+                if i < len(images) - 1:
+                    st.markdown("---")
+            return
+
+        first_token = target_tokens[0]
+        try_sequence = len(target_tokens) > 1
+
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         dpi = 300
         mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
@@ -82,23 +105,43 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
             mode = "RGB" if pix.n < 4 else "RGBA"
             img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
 
-            # Overlay
             overlay = Image.new("RGBA", img.size, (255, 255, 255, 0))
             draw = ImageDraw.Draw(overlay)
 
-            # Parole dalla pagina
-            words = page.get_text("words")
+            words = page.get_text("words")  # (x0, y0, x1, y1, "word", ...)
 
-            for w in words:
-                word_text = w[4].strip().lower()
-                if word_text == target:
-                    rect = fitz.Rect(w[0], w[1], w[2], w[3])
-                    rect *= mat   # scala a pixel reali
+            found_any = False
 
-                    draw.rectangle(
-                        [rect.x0, rect.y0, rect.x1, rect.y1],
-                        fill=(255, 230, 0, 120)
-                    )
+            if try_sequence:
+                # cerca sequenze di parole corrispondenti esattamente a target_tokens
+                n = len(words)
+                m = len(target_tokens)
+                for idx in range(0, n - m + 1):
+                    match = True
+                    for k in range(m):
+                        wtext = normalize_token(words[idx + k][4])
+                        if wtext != target_tokens[k]:
+                            match = False
+                            break
+                    if match:
+                        found_any = True
+                        # unisci bbox della sequenza
+                        x0 = min(words[idx + k][0] for k in range(m))
+                        y0 = min(words[idx + k][1] for k in range(m))
+                        x1 = max(words[idx + k][2] for k in range(m))
+                        y1 = max(words[idx + k][3] for k in range(m))
+                        rect = fitz.Rect(x0, y0, x1, y1)
+                        rect *= mat
+                        draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 120))
+
+            if not found_any:
+                # fallback: evidenzia tutte le occorrenze della prima parola
+                for w in words:
+                    wnorm = normalize_token(w[4])
+                    if wnorm == first_token:
+                        rect = fitz.Rect(w[0], w[1], w[2], w[3])
+                        rect *= mat
+                        draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 120))
 
             # composizione immagine + overlay
             img_rgba = img.convert("RGBA")
@@ -109,9 +152,9 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                 left_margin = (100 - width_percentage) / 2
                 col1, col2, col3 = st.columns([left_margin, width_percentage, left_margin])
                 with col2:
-                    st.image(highlighted, use_column_width=True, caption=f"Pagina {i+1}")
+                    st.image(highlighted, use_container_width=True, caption=f"Pagina {i+1}")
             else:
-                st.image(highlighted, use_column_width=True, caption=f"Pagina {i+1}")
+                st.image(highlighted, use_container_width=True, caption=f"Pagina {i+1}")
 
             if i < doc.page_count - 1:
                 st.markdown("---")
