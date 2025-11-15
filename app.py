@@ -31,14 +31,28 @@ def get_output_filename(input_filename, surname):
     else:
         return f"Turni {surname}.pdf"
 
-def display_pdf(pdf_bytes, title="PDF"):
+def display_pdf(pdf_bytes, title="PDF", filename="document.pdf"):
     """Mostra un PDF convertendolo in immagini (funziona su tutti i browser)"""
     st.markdown(f"### {title}")
     
+    # Pulsante download PRIMA dell'anteprima
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.download_button(
+            label="⬇️ Scarica PDF",
+            data=pdf_bytes,
+            file_name=filename,
+            mime="application/pdf",
+            type="primary",
+            use_container_width=True
+        )
+    
+    st.markdown("---")
+    
     try:
-        # Converti PDF in immagini
-        with st.spinner("Caricamento anteprima..."):
-            images = convert_from_bytes(pdf_bytes, dpi=150)
+        # Converti PDF in immagini ad alta risoluzione
+        with st.spinner("Caricamento anteprima ad alta qualità..."):
+            images = convert_from_bytes(pdf_bytes, dpi=300)
         
         # Mostra ogni pagina come immagine
         for i, image in enumerate(images):
@@ -48,7 +62,7 @@ def display_pdf(pdf_bytes, title="PDF"):
     
     except Exception as e:
         st.error(f"Errore nella visualizzazione del PDF: {str(e)}")
-        st.info("💡 Usa il pulsante di download per aprire il PDF esternamente.")
+        st.info("💡 Usa il pulsante di download qui sopra per aprire il PDF esternamente.")
 
 def init_session_state():
     """Inizializza lo stato della sessione"""
@@ -163,21 +177,11 @@ if st.session_state.pdf_processed and st.session_state.shifts:
         
         # Mostra anteprima
         if st.session_state.generated_pdf_bytes:
-            display_pdf(st.session_state.generated_pdf_bytes, "Anteprima PDF")
-            
-            st.markdown("---")
-            
-            # Pulsante download centrato
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.download_button(
-                    label="⬇️ Scarica PDF",
-                    data=st.session_state.generated_pdf_bytes,
-                    file_name=st.session_state.output_filename,
-                    mime="application/pdf",
-                    type="primary",
-                    use_container_width=True
-                )
+            display_pdf(
+                st.session_state.generated_pdf_bytes, 
+                "Anteprima PDF",
+                st.session_state.output_filename
+            )
     
     with tab2:
         st.markdown("### ✏️ Modifica Turni")
@@ -344,7 +348,11 @@ if st.session_state.pdf_processed and st.session_state.shifts:
     
     with tab3:
         if st.session_state.input_pdf_bytes:
-            display_pdf(st.session_state.input_pdf_bytes, "PDF di Input")
+            display_pdf(
+                st.session_state.input_pdf_bytes, 
+                "PDF di Input",
+                st.session_state.input_filename
+            )
 
 # Footer
 st.markdown("---")
