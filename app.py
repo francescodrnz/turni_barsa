@@ -13,7 +13,7 @@ import os
 import re
 import base64
 from pdf2image import convert_from_bytes
-from PIL import Image
+from PIL import Image, ImageDraw
 import io
 import fitz  # PyMuPDF
 
@@ -33,7 +33,9 @@ def get_output_filename(input_filename, surname):
         return f"Turni {surname}.pdf"
 
 def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width_percentage=100, highlight_text=None):
-    """Mostra un PDF convertendolo in immagini (funziona su tutti i browser)"""
+    """Mostra un PDF convertendolo in immagini (funziona su tutti i browser).
+    Se highlight_text è fornito, evidenzia tutte le occorrenze (case-insensitive) prima di convertire le pagine in immagini.
+    """
     if title:
         st.markdown(f"### {title}")
     
@@ -49,28 +51,71 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                 type="primary",
                 use_container_width=True
             )
-        
         st.markdown("---")
     
     try:
-        # Converti PDF in immagini ad alta risoluzione
-        with st.spinner("Caricamento anteprima ad alta qualità..."):
-            images = convert_from_bytes(pdf_bytes, dpi=300)
-        
-        # Mostra ogni pagina come immagine con larghezza personalizzabile
-        for i, image in enumerate(images):
+        # Se non serve evidenziare, usa convert_from_bytes come prima (più semplice)
+        if not highlight_text:
+            with st.spinner("Caricamento anteprima ad alta qualità..."):
+                images = convert_from_bytes(pdf_bytes, dpi=300)
+            for i, image in enumerate(images):
+                if width_percentage < 100:
+                    left_margin = (100 - width_percentage) / 2
+                    col1, col2, col3 = st.columns([left_margin, width_percentage, left_margin])
+                    with col2:
+                        st.image(image, use_column_width=True, caption=f"Pagina {i+1}")
+                else:
+                    st.image(image, use_column_width=True, caption=f"Pagina {i+1}")
+                if i < len(images) - 1:
+                    st.markdown("---")
+            return
+
+        # Se serve evidenziare, apri con PyMuPDF e renderizza pagina per pagina,
+        # evidenziando le parole che corrispondono (case-insensitive).
+        target = highlight_text.strip().lower()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        dpi = 300
+        mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
+
+        for i in range(doc.page_count):
+            page = doc.load_page(i)
+            # render della pagina a pixmap
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            mode = "RGB" if pix.n < 4 else "RGBA"
+            img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+            # overlay RGBA per disegnare evidenziatori semi-trasparenti
+            overlay = Image.new("RGBA", img.size, (255, 255, 255, 0))
+            draw = ImageDraw.Draw(overlay)
+
+            # cerca parole e confronta in lowercase
+            words = page.get_text("words")  # lista di tuple (x0, y0, x1, y1, "word", ...)
+            for w in words:
+                word_text = w[4] if len(w) > 4 else ""
+                if word_text.strip().lower() == target:
+                    r = fitz.Rect(w[0], w[1], w[2], w[3])
+                    # scala la bbox alla dimensione del pixmap
+                    r *= mat
+                    # disegna rettangolo semitrasparente (giallo)
+                    draw.rectangle([r.x0, r.y0, r.x1, r.y1], fill=(255, 230, 0, 120), outline=None)
+
+            # composita overlay su immagine di base
+            img_rgba = img.convert("RGBA")
+            highlighted = Image.alpha_composite(img_rgba, overlay)
+
+            # mostra immagine risultante
             if width_percentage < 100:
-                # Centra l'immagine con colonne
                 left_margin = (100 - width_percentage) / 2
                 col1, col2, col3 = st.columns([left_margin, width_percentage, left_margin])
                 with col2:
-                    st.image(image, width="stretch", caption=f"Pagina {i+1}")
+                    st.image(highlighted, use_column_width=True, caption=f"Pagina {i+1}")
             else:
-                st.image(image, width="stretch", caption=f"Pagina {i+1}")
+                st.image(highlighted, use_column_width=True, caption=f"Pagina {i+1}")
             
-            if i < len(images) - 1:
+            if i < doc.page_count - 1:
                 st.markdown("---")
-    
+        
+        doc.close()
+
     except Exception as e:
         st.error(f"Errore nella visualizzazione del PDF: {str(e)}")
         if show_download:
