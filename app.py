@@ -15,6 +15,7 @@ import base64
 from pdf2image import convert_from_bytes
 from PIL import Image
 import io
+import fitz  # PyMuPDF
 
 # Configurazione pagina
 st.set_page_config(
@@ -366,7 +367,8 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                 title=None,
                 filename=None,
                 show_download=False,
-                width_percentage=100
+                width_percentage=100,
+                highlight_text=st.session_state.surname
             )
 
 # Footer
