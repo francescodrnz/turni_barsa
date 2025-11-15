@@ -12,6 +12,9 @@ import tempfile
 import os
 import re
 import base64
+from pdf2image import convert_from_bytes
+from PIL import Image
+import io
 
 # Configurazione pagina
 st.set_page_config(
@@ -28,37 +31,24 @@ def get_output_filename(input_filename, surname):
     else:
         return f"Turni {surname}.pdf"
 
-def display_pdf(pdf_bytes, title="PDF", filename="document.pdf"):
-    """
-    Mostra un PDF usando un link di download con anteprima automatica.
-    Questa è la soluzione più affidabile cross-browser.
-    """
+def display_pdf(pdf_bytes, title="PDF"):
+    """Mostra un PDF convertendolo in immagini (funziona su tutti i browser)"""
     st.markdown(f"### {title}")
     
-    # Usa st.download_button come visualizzatore principale
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.download_button(
-            label=f"📄 Apri {title}",
-            data=pdf_bytes,
-            file_name=filename,
-            mime="application/pdf",
-            type="secondary",
-            use_container_width=True,
-            help="Clicca per aprire il PDF in una nuova scheda del browser"
-        )
-    
-    st.caption(f"📊 Dimensione: {len(pdf_bytes) / 1024:.1f} KB")
-    
-    # Prova comunque a mostrare l'embed per i browser che lo supportano
-    with st.expander("🔍 Anteprima incorporata (se supportata dal browser)", expanded=True):
-        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+    try:
+        # Converti PDF in immagini
+        with st.spinner("Caricamento anteprima..."):
+            images = convert_from_bytes(pdf_bytes, dpi=150)
         
-        # Iframe con PDF embed - funziona su Firefox e alcuni altri browser
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf" style="border: 1px solid #ddd;"></iframe>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
-        
-        st.info("💡 Se l'anteprima non appare, usa il pulsante 'Apri PDF' qui sopra. Chrome e Edge potrebbero bloccare l'anteprima incorporata per motivi di sicurezza.")
+        # Mostra ogni pagina come immagine
+        for i, image in enumerate(images):
+            st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
+            if i < len(images) - 1:
+                st.markdown("---")
+    
+    except Exception as e:
+        st.error(f"Errore nella visualizzazione del PDF: {str(e)}")
+        st.info("💡 Usa il pulsante di download per aprire il PDF esternamente.")
 
 def init_session_state():
     """Inizializza lo stato della sessione"""
@@ -159,6 +149,8 @@ if st.session_state.pdf_processed and st.session_state.shifts:
     tab1, tab2, tab3 = st.tabs(["📥 PDF Generato", "✏️ Modifica Turni", "📄 PDF Input"])
     
     with tab1:
+        st.markdown("### 📥 PDF Generato")
+        
         # Genera il PDF se necessario
         if st.session_state.need_regenerate or st.session_state.generated_pdf_bytes is None:
             with st.spinner("Generazione PDF in corso..."):
@@ -169,17 +161,13 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                 )
                 st.session_state.need_regenerate = False
         
-        # Mostra PDF
+        # Mostra anteprima
         if st.session_state.generated_pdf_bytes:
-            display_pdf(
-                st.session_state.generated_pdf_bytes,
-                "PDF Turni Generato",
-                st.session_state.output_filename
-            )
+            display_pdf(st.session_state.generated_pdf_bytes, "Anteprima PDF")
             
             st.markdown("---")
             
-            # Pulsante download separato più prominente
+            # Pulsante download centrato
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 st.download_button(
@@ -356,11 +344,7 @@ if st.session_state.pdf_processed and st.session_state.shifts:
     
     with tab3:
         if st.session_state.input_pdf_bytes:
-            display_pdf(
-                st.session_state.input_pdf_bytes,
-                "PDF di Input",
-                st.session_state.input_filename
-            )
+            display_pdf(st.session_state.input_pdf_bytes, "PDF di Input")
 
 # Footer
 st.markdown("---")
