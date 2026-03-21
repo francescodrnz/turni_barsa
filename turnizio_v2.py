@@ -115,27 +115,23 @@ def get_hardcoded_structure():
         54: ("Riposo", "", ""),
         55: ("Riposo", "", ""),
         56: ("Riposo", "", ""),
+        57: ("Riposo", "", ""),
         
         # 2° Riposo
-        58: ("2° Riposo", "", ""),
         59: ("2° Riposo", "", ""),
         60: ("2° Riposo", "", ""),
-        61: ("2° Riposo", "", ""),
-        62: ("2° Riposo", "", ""),
         
         # Ferie
-        64: ("Ferie", "", ""),
-        65: ("Ferie", "", ""),
-        66: ("Ferie", "", ""),
-        67: ("Ferie", "", ""),
+        62: ("Ferie", "", ""),
+        63: ("Ferie", "", ""),
         
         # Malattia
-        69: ("Malattia", "", ""),
-        70: ("Malattia", "", ""),
+        65: ("Malattia", "", ""),
+        66: ("Malattia", "", ""),
         
         # Permessi Vari
-        72: ("Permessi Vari", "", ""),
-        73: ("Permessi Vari", "", ""),
+        68: ("Permessi Vari", "", ""),
+        69: ("Permessi Vari", "", ""),
     }
     
     return structure
