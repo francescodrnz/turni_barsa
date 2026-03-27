@@ -171,7 +171,7 @@ def get_output_filename(input_filename, surname):
     return f"Turni {surname} " + match.group(0).lower() if match else f"Turni {surname}.pdf"
 
 
-def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highlight_text=None):
+def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highlight_text=None, use_zoom=False):
     if title:
         st.markdown(f"### {title}")
 
@@ -188,8 +188,19 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
             )
         st.markdown("---")
 
-    # Zoom Controller
-    zoom_val = st.slider("Livello Zoom", 50, 300, 100, step=10, key=f"zoom_{hash(pdf_bytes)}")
+    if not use_zoom:
+        # Standard display for generated PDF (no zoom needed)
+        try:
+            images = convert_from_bytes(pdf_bytes, dpi=200)
+            for i, image in enumerate(images):
+                st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
+            return
+        except Exception as e:
+            st.error(f"Errore anteprima: {e}")
+            return
+
+    # Zoom Controller (only for Input PDF)
+    zoom_val = st.slider("Livello Zoom (%)", 100, 400, 100, step=10, key=f"zoom_{hash(pdf_bytes)}")
     
     try:
         def normalize_token(s):
@@ -198,14 +209,13 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
             return s.lower()
 
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        dpi = 200 # Standard preview DPI
+        dpi = 150 # Faster rendering for zoomable view
         mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
         
         target_tokens = []
         if highlight_text:
             target_tokens = [normalize_token(t) for t in highlight_text.strip().split() if normalize_token(t)]
 
-        # Render all pages in a single scrollable div
         html_images = []
         for i in range(doc.page_count):
             page = doc.load_page(i)
@@ -239,18 +249,19 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
                 
                 img = Image.alpha_composite(img.convert("RGBA"), overlay)
 
-            # Convert to base64 for HTML display
             buffered = io.BytesIO()
             img.save(buffered, format="PNG")
             img_str = base64.b64encode(buffered.getvalue()).decode()
-            html_images.append(f'<img src="data:image/png;base64,{img_str}" style="width:{zoom_val}%; margin-bottom:20px; border-radius:8px; display:block; margin-left:auto; margin-right:auto;">')
+            html_images.append(f'<img src="data:image/png;base64,{img_str}" style="width:100%; margin-bottom:10px; border-radius:4px; display:block;">')
         
         doc.close()
         
-        # Display in scrollable container
+        # Wrapping in a scaling div to force horizontal scroll in zoom-container
         st.markdown(f"""
             <div class="zoom-container">
-                {''.join(html_images)}
+                <div style="width: {zoom_val}%; min-width: 100%; margin: 0 auto;">
+                    {''.join(html_images)}
+                </div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -560,6 +571,7 @@ else:
         display_pdf(
             st.session_state.input_pdf_bytes,
             highlight_text=st.session_state.surname,
+            use_zoom=True
         )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
