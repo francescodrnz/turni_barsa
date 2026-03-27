@@ -10,6 +10,7 @@ from main import (
     get_hardcoded_structure,
     structure_to_json_bytes,
     structure_from_json_bytes,
+    get_raw_pdf_rows,
 )
 import tempfile
 import os
@@ -206,6 +207,9 @@ if uploaded_file and surname:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 tmp.write(uploaded_file.read())
                 tmp_path = tmp.name
+            
+            # Store path in session state for debug use in Structure tab
+            st.session_state.temp_pdf_path = tmp_path
 
             tables = parse_pdf(tmp_path)
             if tables:
@@ -228,8 +232,6 @@ if uploaded_file and surname:
             else:
                 st.error("❌ Errore nella lettura del PDF")
                 st.session_state.pdf_processed = False
-
-            os.remove(tmp_path)
 
 if st.session_state.pdf_processed and st.session_state.shifts:
     st.markdown("---")
@@ -308,7 +310,7 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                 with col_bagni: st.markdown("**Pulizia bagni**")
             st.markdown("---")
 
-            modified = False
+            new_shifts = []
             for i, shift in enumerate(st.session_state.shifts):
                 day, day_number, location, time = shift[:4]
                 pulizia_bagni = shift[4] if len(shift) > 4 else ""
@@ -323,30 +325,27 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                     st.text_input("Giorno", value=f"{day_display} {day_number}", disabled=True, key=f"day_{i}", label_visibility="collapsed")
                 with col_loc:
                     new_location = st.text_input("Luogo", value=location, key=f"loc_{i}", label_visibility="collapsed")
-                    if new_location != location: modified = True
                 with col_time:
                     new_time = st.text_input("Orario", value=time, key=f"time_{i}", label_visibility="collapsed")
-                    if new_time != time: modified = True
 
                 if has_bagni:
                     with col_bagni:
                         if "giardini del castello" in new_location.lower():
                             current_index = 1 if pulizia_bagni.lower() == "sì" else 0
                             new_pulizia = st.selectbox("Pulizia", ["No", "Sì"], index=current_index, key=f"bagni_{i}", label_visibility="collapsed")
-                            if new_pulizia != pulizia_bagni: modified = True
                         else:
                             new_pulizia = ""
                             st.text("")
                 else:
                     new_pulizia = ""
 
-                if modified:
-                    st.session_state.shifts[i] = (day, day_number, new_location, new_time, new_pulizia)
+                new_shifts.append((day, day_number, new_location, new_time, new_pulizia))
 
             st.markdown("---")
             c_save, c_info = st.columns([1, 3])
             with c_save:
                 if st.button("💾 Salva e Rigenera PDF", type="secondary", width="stretch"):
+                    st.session_state.shifts = new_shifts
                     st.session_state.need_regenerate = True
                     st.success("✅ Modifiche salvate! Vai alla tab 'PDF Generato'.")
                     st.rerun()
@@ -355,12 +354,8 @@ if st.session_state.pdf_processed and st.session_state.shifts:
 
     # ── Tab 3: PDF Input ──────────────────────────────────────────────────────
     with tab3:
-        if st.session_state.input_pdf_bytes:
-            display_pdf(
-                st.session_state.input_pdf_bytes,
-                highlight_text=st.session_state.surname,
-                width_percentage=100,
-            )
+        st.markdown("### 📄 Visualizzazione PDF Input")
+        st.info("Anteprima del PDF originale con evidenziato il cognome cercato.")
 
     # ── Tab 4: Struttura PDF ──────────────────────────────────────────────────
     with tab4:
@@ -369,6 +364,21 @@ if st.session_state.pdf_processed and st.session_state.shifts:
             "Ogni riga corrisponde a una riga della tabella nel PDF sorgente (0-indexed, dopo l'header). "
             "**Riga PDF** è l'indice; i gap tra indici indicano righe vuote/ignorate nel PDF."
         )
+        st.markdown("---")
+        
+        # DEBUG PDF RIGHE
+        with st.expander("🔍 Modalità Debug - Visualizza righe grezze dal PDF", expanded=False):
+            if hasattr(st.session_state, "temp_pdf_path") and os.path.exists(st.session_state.temp_pdf_path):
+                if st.button("🔄 Carica/Aggiorna righe PDF"):
+                    raw_data = get_raw_pdf_rows(st.session_state.temp_pdf_path)
+                    st.session_state.raw_pdf_rows = raw_data
+                
+                if hasattr(st.session_state, "raw_pdf_rows"):
+                    st.markdown("Questa tabella mostra esattamente cosa legge il PDF per ogni riga.")
+                    st.dataframe(st.session_state.raw_pdf_rows, use_container_width=True)
+            else:
+                st.warning("Carica prima un PDF per vedere le righe grezze.")
+
         st.markdown("---")
 
         # Upload JSON
@@ -460,6 +470,12 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                     # Forza la ri-estrazione se c'è già un PDF caricato
                     st.session_state.pdf_processed = False
                     st.session_state.shifts = None
+                    
+                    # Rimuoviamo i widget temporanei dei turni per forzare il refresh dei valori
+                    for key in list(st.session_state.keys()):
+                        if key.startswith(("loc_", "time_", "bagni_", "day_")):
+                            del st.session_state[key]
+                            
                     st.session_state.need_regenerate = True
                     st.success(f"✅ Struttura aggiornata ({len(new_structure)} righe). Ri-estrai i turni.")
                     st.rerun()
@@ -498,9 +514,19 @@ if st.session_state.pdf_processed and st.session_state.shifts:
             "`structure.json` nella tua repository locale e fai un nuovo push su GitHub."
         )
 
+# ── Preview PDF Input (Visible on every tab) ──────────────────────────────────
+if st.session_state.pdf_processed and st.session_state.input_pdf_bytes:
+    st.markdown("---")
+    with st.expander("📄 Visualizza PDF Originale (Anteprima)", expanded=True):
+        display_pdf(
+            st.session_state.input_pdf_bytes,
+            highlight_text=st.session_state.surname,
+            width_percentage=100,
+        )
+
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
-    "<div style='text-align: center; color: #666; font-size: 0.8em;'>Generatore Turni PDF v3.0 | Streamlit App</div>",
+    "<div style='text-align: center; color: #666; font-size: 0.8em;'>Generatore Turni PDF v3.1 | Streamlit App</div>",
     unsafe_allow_html=True
 )

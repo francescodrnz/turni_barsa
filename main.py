@@ -24,6 +24,36 @@ def format_day_for_display(day_name):
         return "mercoledì"
     return day_name
 
+def get_raw_pdf_rows(file_path):
+    """Ritorna una lista di tuple (indice_riga_tabella, contenuto_riga) per debug."""
+    tables = read_pdf_tables(file_path)
+    if not tables:
+        return []
+    
+    raw_rows = []
+    for table_idx, table in enumerate(tables):
+        header_row_idx = -1
+        # Cerchiamo l'header per dare un contesto agli indici
+        for row_idx in range(min(3, len(table))):
+            row = table[row_idx]
+            if not row: continue
+            for cell in row:
+                if cell and re.search(r"([a-zàèéìòù']+)\s+(\d+)", str(cell), re.IGNORECASE):
+                    header_row_idx = row_idx
+                    break
+            if header_row_idx != -1: break
+        
+        for row_idx, row in enumerate(table):
+            # Calcoliamo l'indice relativo se abbiamo trovato l'header, altrimenti usiamo quello assoluto
+            display_idx = row_idx - header_row_idx - 1 if header_row_idx != -1 else row_idx
+            raw_rows.append({
+                "Tabella": table_idx,
+                "Riga Assoluta": row_idx,
+                "Indice Struttura": display_idx if row_idx > header_row_idx else f"Header ({row_idx})",
+                "Contenuto": [str(c).replace('\n', ' ') if c else "" for c in row]
+            })
+    return raw_rows
+
 def get_hardcoded_structure(json_path=None):
     """
     Carica la struttura da un file JSON se disponibile, altrimenti usa quella hardcoded.
