@@ -386,22 +386,32 @@ if st.session_state.pdf_processed and st.session_state.shifts:
 
         st.markdown("---")
 
-        # Upload JSON
-        uploaded_json = st.file_uploader("📂 Importa struttura da file JSON", type="json", key="json_uploader")
-        if uploaded_json is not None:
-            try:
-                new_structure = structure_from_json_bytes(uploaded_json.read())
-                st.session_state.structure = new_structure
-                st.success(f"✅ Struttura importata: {len(new_structure)} righe caricate.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Errore nel caricamento del file JSON: {e}")
+        # Editor
+        current_structure = get_structure()
+        df = structure_to_df(current_structure)
+
+        st.markdown("#### 📝 Tabella di Corrispondenza")
+        st.write("Modifica direttamente i valori nella tabella qui sotto:")
+        edited_df = st.data_editor(
+            df,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Riga PDF": st.column_config.NumberColumn(
+                    "Indice",
+                    help="Posizione della riga nel PDF sorgente",
+                    min_value=0,
+                    step=1,
+                    required=True,
+                ),
+                "Luogo": st.column_config.TextColumn("Luogo assegnato", required=True),
+                "Orario": st.column_config.TextColumn("Orario assegnato", help="Es: 08:00-14:00"),
+            },
+            key="structure_editor",
+        )
 
         st.markdown("---")
 
-        # Editor
-        current_structure = get_structure()
-        
         # Scalamento righe
         st.markdown("#### 🛠️ Gestione Rapida Righe")
         st.write("Inserisci o rimuovi righe: il programma sposterà automaticamente tutti gli altri indici.")
@@ -436,28 +446,6 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                     st.warning(f"La riga {ins_idx} non esiste nella struttura.")
 
         st.markdown("---")
-
-        df = structure_to_df(current_structure)
-
-        st.markdown("#### 📝 Tabella di Corrispondenza")
-        st.write("Modifica direttamente i valori nella tabella qui sotto:")
-        edited_df = st.data_editor(
-            df,
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "Riga PDF": st.column_config.NumberColumn(
-                    "Indice",
-                    help="Posizione della riga nel PDF sorgente",
-                    min_value=0,
-                    step=1,
-                    required=True,
-                ),
-                "Luogo": st.column_config.TextColumn("Luogo assegnato", required=True),
-                "Orario": st.column_config.TextColumn("Orario assegnato", help="Es: 08:00-14:00"),
-            },
-            key="structure_editor",
-        )
 
         c_apply, c_download, c_reset = st.columns([1, 1, 1])
 
@@ -510,6 +498,18 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                 st.rerun()
 
         st.markdown("---")
+
+        # Upload JSON
+        uploaded_json = st.file_uploader("📂 Importa struttura da file JSON", type="json", key="json_uploader")
+        if uploaded_json is not None:
+            try:
+                new_structure = structure_from_json_bytes(uploaded_json.read())
+                st.session_state.structure = new_structure
+                st.success(f"✅ Struttura importata: {len(new_structure)} righe caricate.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Errore nel caricamento del file JSON: {e}")
+
         st.warning(
             "⚠️ **Nota importante sulla persistenza:** \n"
             "Se l'app gira su Streamlit Cloud, le modifiche salvate sono temporanee. "
