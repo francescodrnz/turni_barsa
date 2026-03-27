@@ -386,9 +386,44 @@ if st.session_state.pdf_processed and st.session_state.shifts:
 
         # Editor
         current_structure = get_structure()
+        
+        # Scalamento righe
+        st.markdown("**Gestione righe (scalamento automatico)**")
+        col_ins1, col_ins2, col_ins3 = st.columns([1, 1.5, 1.5])
+        with col_ins1:
+            ins_idx = st.number_input("Indice riga (Riga PDF)", min_value=0, value=0, step=1)
+        with col_ins2:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("➕ Inserisci riga qui", use_container_width=True, help="Inserisce una nuova riga all'indice specificato e fa slittare in avanti tutte le successive"):
+                new_struct = {}
+                for k, v in current_structure.items():
+                    if k >= ins_idx:
+                        new_struct[k + 1] = v
+                    else:
+                        new_struct[k] = v
+                new_struct[ins_idx] = ("Nuovo Luogo", "", "")
+                st.session_state.structure = new_struct
+                st.rerun()
+        with col_ins3:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("➖ Rimuovi riga qui", use_container_width=True, help="Rimuove la riga all'indice specificato e fa arretrare tutte le successive"):
+                if ins_idx in current_structure:
+                    new_struct = {}
+                    for k, v in current_structure.items():
+                        if k < ins_idx:
+                            new_struct[k] = v
+                        elif k > ins_idx:
+                            new_struct[k - 1] = v
+                    st.session_state.structure = new_struct
+                    st.rerun()
+                else:
+                    st.warning(f"La riga {ins_idx} non esiste nella struttura.")
+
+        st.markdown("---")
+
         df = structure_to_df(current_structure)
 
-        st.markdown("**Modifica la struttura** — aggiungi/rimuovi righe o modifica luogo e orario:")
+        st.markdown("**Modifica manuale la struttura** — modifica luogo e orario:")
         edited_df = st.data_editor(
             df,
             num_rows="dynamic",
@@ -410,10 +445,18 @@ if st.session_state.pdf_processed and st.session_state.shifts:
         c_apply, c_download, c_reset = st.columns([1, 1, 1])
 
         with c_apply:
-            if st.button("✅ Applica struttura", type="primary", width="stretch"):
+            if st.button("✅ Applica e Salva", type="primary", width="stretch", help="Applica la struttura e salva sul file locale structure.json"):
                 new_structure = df_to_structure(edited_df)
                 if new_structure:
                     st.session_state.structure = new_structure
+                    # Salva localmente
+                    try:
+                        with open("structure.json", "wb") as f:
+                            f.write(structure_to_json_bytes(new_structure))
+                        st.toast("Salvato localmente su structure.json", icon="💾")
+                    except Exception as e:
+                        st.error(f"Errore salvataggio file: {e}")
+                        
                     # Forza la ri-estrazione se c'è già un PDF caricato
                     st.session_state.pdf_processed = False
                     st.session_state.shifts = None
@@ -446,10 +489,13 @@ if st.session_state.pdf_processed and st.session_state.shifts:
         st.markdown("---")
         st.info(
             "**Workflow per PDF aggiornato:** \n"
-            "1. Modifica la tabella qui sopra (o carica un JSON già aggiornato)\n"
-            "2. Clicca **Applica struttura**\n"
+            "1. Aggiungi/rimuovi righe con i bottoni sopra o modifica i testi nella tabella\n"
+            "2. Clicca **Applica e Salva** (salverà sul disco locale se non sei su Cloud)\n"
             "3. Torna in cima, carica il nuovo PDF e clicca **Estrai turni**\n"
-            "4. Scarica il JSON aggiornato per usarlo nelle sessioni future"
+            "\n**Nota per la persistenza su Streamlit Cloud:** \n"
+            "Le modifiche fatte qui sono temporanee per la sessione se l'app gira su cloud. "
+            "Per renderle permanenti su GitHub, clicca **Scarica JSON**, sostituisci il file "
+            "`structure.json` nella tua repository locale e fai un nuovo push su GitHub."
         )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
