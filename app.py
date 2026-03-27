@@ -34,7 +34,7 @@ st.markdown("""
     <style>
     /* Global style */
     .main {
-        background-color: #f9fbff;
+        background-color: #f8fafc;
     }
     .stApp {
         max-width: 1400px;
@@ -43,7 +43,7 @@ st.markdown("""
     
     /* Headers */
     h1 {
-        color: #1e3a8a;
+        color: #0f172a !important;
         font-weight: 800;
         letter-spacing: -0.02em;
         margin-bottom: 1.5rem !important;
@@ -51,66 +51,84 @@ st.markdown("""
     
     /* Sidebar styling */
     section[data-testid="stSidebar"] {
-        background-color: #ffffff;
+        background-color: #f1f5f9;
         border-right: 1px solid #e2e8f0;
+    }
+    section[data-testid="stSidebar"] .stMarkdown p, 
+    section[data-testid="stSidebar"] label {
+        color: #334155 !important;
+        font-weight: 600;
     }
     
     /* Tabs styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: #f1f5f9;
-        padding: 6px;
+        background-color: #e2e8f0;
+        padding: 8px;
         border-radius: 12px;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 44px;
+        height: 48px;
         border-radius: 8px;
         border: none;
-        padding: 0px 20px;
-        color: #64748b;
+        padding: 0px 24px;
+        color: #475569;
         background-color: transparent;
-        transition: all 0.2s;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: rgba(255, 255, 255, 0.5);
+        color: #1e293b;
     }
     .stTabs [aria-selected="true"] {
         background-color: #ffffff !important;
-        color: #1e3a8a !important;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-        font-weight: 600;
+        color: #1e40af !important;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        font-weight: 700;
     }
     
-    /* Cards (simulated with expanders or containers) */
+    /* Expanders styling */
     div[data-testid="stExpander"] {
         border: 1px solid #e2e8f0;
         border-radius: 12px;
         background-color: white;
-        box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+        box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
         margin-bottom: 1rem;
+    }
+    div[data-testid="stExpander"] details summary {
+        color: #1e293b !important;
+        font-weight: 600 !important;
+        background-color: #ffffff;
+        padding: 10px 15px;
+        border-radius: 12px;
+    }
+    div[data-testid="stExpander"] details summary:hover {
+        background-color: #f8fafc;
     }
     
     /* Buttons */
     .stButton>button {
         border-radius: 8px;
         font-weight: 600;
-        transition: all 0.2s;
-    }
-    .stButton>button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+        transition: all 0.2s ease-in-out;
     }
     
     /* Footer */
     .footer {
         text-align: center;
-        color: #94a3b8;
+        color: #64748b;
         font-size: 0.85rem;
         margin-top: 4rem;
         padding-bottom: 2rem;
+        border-top: 1px solid #e2e8f0;
+        padding-top: 2rem;
     }
     
-    /* Compact Data Editor */
-    div[data-testid="stDataEditor"] {
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
+    /* Fix for white text on white bg in some widgets */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"] {
+        color: #0f172a !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -499,7 +517,7 @@ else:
 
     # ── PDF Input Preview (Bottom) ───────────────────────────────────────────
     st.markdown("---")
-    with st.expander("📄 Visualizza Anteprima PDF Originale (Input)", expanded=False):
+    with st.expander("📄 Visualizza PDF Originale (Input)", expanded=False):
         display_pdf(
             st.session_state.input_pdf_bytes,
             highlight_text=st.session_state.surname,
@@ -507,6 +525,6 @@ else:
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(
-    "<div class='footer'>Turnizio Bar.S.A. v4.0 | Realizzato per efficienza e precisione</div>",
+    "<div class='footer'>Turnizio Bar.S.A. v4.1 | Realizzato per efficienza e precisione</div>",
     unsafe_allow_html=True
 )
