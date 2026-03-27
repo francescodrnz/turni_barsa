@@ -16,6 +16,7 @@ import tempfile
 import os
 import re
 import pandas as pd
+import base64
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageDraw
 import io
@@ -257,9 +258,6 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
         st.error(f"Errore visualizzazione PDF: {str(e)}")
 
 
-import base64 # Needed for the new display_pdf
-
-
 def init_session_state():
     defaults = {
         'shifts': None,
@@ -406,8 +404,7 @@ else:
         display_pdf(
             st.session_state.generated_pdf_bytes,
             filename=st.session_state.output_filename,
-            show_download=True,
-            width_percentage=80
+            show_download=True
         )
 
     # ── TAB 2: MODIFICA TURNI ────────────────────────────────────────────────
@@ -567,6 +564,6 @@ else:
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(
-    "<div class='footer'>Turnizio Bar.S.A. v4.1 | Realizzato per efficienza e precisione</div>",
+    "<div class='footer'>Turnizio Bar.S.A. v4.2 | Realizzato per efficienza e precisione</div>",
     unsafe_allow_html=True
 )
