@@ -29,106 +29,135 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── Custom CSS for Professional Look ─────────────────────────────────────────
+# ── Custom CSS for Professional Dark Look ─────────────────────────────────────
 st.markdown("""
     <style>
-    /* Global style */
-    .main {
-        background-color: #f8fafc;
-    }
+    /* Dark Theme Core */
     .stApp {
-        max-width: 1400px;
-        margin: 0 auto;
+        background-color: #0f172a;
+        color: #f8fafc;
     }
     
-    /* Headers */
+    /* Global Text visibility */
+    h1, h2, h3, h4, p, label, .stMarkdown {
+        color: #f8fafc !important;
+    }
+    
+    /* Headers specific */
     h1 {
-        color: #0f172a !important;
         font-weight: 800;
         letter-spacing: -0.02em;
         margin-bottom: 1.5rem !important;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
     
-    /* Sidebar styling */
+    /* Sidebar styling - Dark Slate */
     section[data-testid="stSidebar"] {
-        background-color: #f1f5f9;
-        border-right: 1px solid #e2e8f0;
+        background-color: #1e293b !important;
+        border-right: 1px solid #334155;
     }
-    section[data-testid="stSidebar"] .stMarkdown p, 
+    section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p, 
     section[data-testid="stSidebar"] label {
-        color: #334155 !important;
-        font-weight: 600;
+        color: #f8fafc !important;
+        font-weight: 500;
     }
     
-    /* Tabs styling */
+    /* Tabs styling - Modern Dark */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: #e2e8f0;
+        background-color: #1e293b;
         padding: 8px;
         border-radius: 12px;
+        border: 1px solid #334155;
     }
     .stTabs [data-baseweb="tab"] {
         height: 48px;
         border-radius: 8px;
         border: none;
         padding: 0px 24px;
-        color: #475569;
+        color: #94a3b8;
         background-color: transparent;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.2s ease-in-out;
     }
     .stTabs [data-baseweb="tab"]:hover {
-        background-color: rgba(255, 255, 255, 0.5);
-        color: #1e293b;
+        background-color: #334155;
+        color: #f8fafc;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #ffffff !important;
-        color: #1e40af !important;
-        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        background-color: #3b82f6 !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 12px -2px rgba(59, 130, 246, 0.4);
         font-weight: 700;
     }
     
-    /* Expanders styling */
-    div[data-testid="stExpander"] {
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        background-color: white;
-        box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-        margin-bottom: 1rem;
+    /* Expanders & Forms - Dark Cards */
+    div[data-testid="stExpander"], .stForm {
+        border: 1px solid #334155 !important;
+        border-radius: 12px !important;
+        background-color: #1e293b !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
     }
     div[data-testid="stExpander"] details summary {
-        color: #1e293b !important;
+        color: #f8fafc !important;
         font-weight: 600 !important;
-        background-color: #ffffff;
-        padding: 10px 15px;
+        background-color: #1e293b;
+        padding: 12px 16px;
         border-radius: 12px;
     }
-    div[data-testid="stExpander"] details summary:hover {
-        background-color: #f8fafc;
+    
+    /* Widget Inputs - High Contrast Dark */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stNumberInput input {
+        background-color: #334155 !important;
+        color: #f8fafc !important;
+        border: 1px solid #475569 !important;
+    }
+    
+    /* Data Editor Theme override */
+    div[data-testid="stDataEditor"] {
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 10px;
     }
     
     /* Buttons */
     .stButton>button {
         border-radius: 8px;
-        font-weight: 600;
+        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.025em;
-        transition: all 0.2s ease-in-out;
+        letter-spacing: 0.05em;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .stButton>button[kind="primary"] {
+        background-color: #3b82f6;
+        border: none;
+    }
+    .stButton>button[kind="primary"]:hover {
+        background-color: #2563eb;
+        transform: translateY(-1px);
+    }
+    
+    /* Zoomable Container */
+    .zoom-container {
+        height: 600px;
+        overflow: auto;
+        border: 2px solid #334155;
+        border-radius: 12px;
+        background-color: #0f172a;
+        cursor: grab;
+    }
+    .zoom-container:active {
+        cursor: grabbing;
     }
     
     /* Footer */
     .footer {
         text-align: center;
-        color: #64748b;
+        color: #94a3b8;
         font-size: 0.85rem;
         margin-top: 4rem;
-        padding-bottom: 2rem;
-        border-top: 1px solid #e2e8f0;
-        padding-top: 2rem;
-    }
-    
-    /* Fix for white text on white bg in some widgets */
-    .stTextInput input, .stSelectbox div[data-baseweb="select"] {
-        color: #0f172a !important;
+        padding: 2rem 0;
+        border-top: 1px solid #334155;
+        background-color: #0f172a;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -141,7 +170,7 @@ def get_output_filename(input_filename, surname):
     return f"Turni {surname} " + match.group(0).lower() if match else f"Turni {surname}.pdf"
 
 
-def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width_percentage=100, highlight_text=None):
+def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highlight_text=None):
     if title:
         st.markdown(f"### {title}")
 
@@ -158,38 +187,37 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
             )
         st.markdown("---")
 
+    # Zoom Controller
+    zoom_val = st.slider("Livello Zoom", 50, 300, 100, step=10, key=f"zoom_{hash(pdf_bytes)}")
+    
     try:
         def normalize_token(s):
             s = s.strip()
             s = re.sub(r"[^\wÀ-ÖØ-öø-ÿ]+", "", s, flags=re.UNICODE)
             return s.lower()
 
-        if not highlight_text or highlight_text.strip() == "":
-            with st.spinner("Caricamento anteprima..."):
-                images = convert_from_bytes(pdf_bytes, dpi=200) # Lower DPI for speed
-            for i, image in enumerate(images):
-                st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
-                if i < len(images) - 1:
-                    st.markdown("---")
-            return
-
-        target_tokens = [normalize_token(t) for t in highlight_text.strip().split() if normalize_token(t)]
-        
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        dpi = 200 # Lower DPI for speed
+        dpi = 200 # Standard preview DPI
         mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
+        
+        target_tokens = []
+        if highlight_text:
+            target_tokens = [normalize_token(t) for t in highlight_text.strip().split() if normalize_token(t)]
 
+        # Render all pages in a single scrollable div
+        html_images = []
         for i in range(doc.page_count):
             page = doc.load_page(i)
             pix = page.get_pixmap(matrix=mat, alpha=False)
             mode = "RGB" if pix.n < 4 else "RGBA"
             img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
-            overlay = Image.new("RGBA", img.size, (255, 255, 255, 0))
-            draw = ImageDraw.Draw(overlay)
-            words = page.get_text("words")
-            found_any = False
-
+            
             if target_tokens:
+                overlay = Image.new("RGBA", img.size, (255, 255, 255, 0))
+                draw = ImageDraw.Draw(overlay)
+                words = page.get_text("words")
+                found_any = False
+                
                 first_token = target_tokens[0]
                 n, m = len(words), len(target_tokens)
                 for idx in range(n - m + 1):
@@ -200,22 +228,36 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                         x1 = max(words[idx + k][2] for k in range(m))
                         y1 = max(words[idx + k][3] for k in range(m))
                         rect = fitz.Rect(x0, y0, x1, y1) * mat
-                        draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 120))
+                        draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 150))
 
                 if not found_any:
                     for w in words:
                         if normalize_token(w[4]) == first_token:
                             rect = fitz.Rect(w[0], w[1], w[2], w[3]) * mat
-                            draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 120))
+                            draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 150))
+                
+                img = Image.alpha_composite(img.convert("RGBA"), overlay)
 
-            highlighted = Image.alpha_composite(img.convert("RGBA"), overlay)
-            st.image(highlighted, use_container_width=True, caption=f"Pagina {i+1}")
-            if i < doc.page_count - 1:
-                st.markdown("---")
+            # Convert to base64 for HTML display
+            buffered = io.BytesIO()
+            img.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            html_images.append(f'<img src="data:image/png;base64,{img_str}" style="width:{zoom_val}%; margin-bottom:20px; border-radius:8px; display:block; margin-left:auto; margin-right:auto;">')
+        
         doc.close()
+        
+        # Display in scrollable container
+        st.markdown(f"""
+            <div class="zoom-container">
+                {''.join(html_images)}
+            </div>
+        """, unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"Errore anteprima PDF: {str(e)}")
+        st.error(f"Errore visualizzazione PDF: {str(e)}")
+
+
+import base64 # Needed for the new display_pdf
 
 
 def init_session_state():
