@@ -21,7 +21,99 @@ from PIL import Image, ImageDraw
 import io
 import fitz  # PyMuPDF
 
-st.set_page_config(page_title="Generatore Turni PDF", page_icon="📅", layout="wide")
+# ── Page Config ──────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="Turnizio Bar.S.A.", 
+    page_icon="📅", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ── Custom CSS for Professional Look ─────────────────────────────────────────
+st.markdown("""
+    <style>
+    /* Global style */
+    .main {
+        background-color: #f9fbff;
+    }
+    .stApp {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    
+    /* Headers */
+    h1 {
+        color: #1e3a8a;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin-bottom: 1.5rem !important;
+    }
+    
+    /* Sidebar styling */
+    section[data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e2e8f0;
+    }
+    
+    /* Tabs styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #f1f5f9;
+        padding: 6px;
+        border-radius: 12px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 44px;
+        border-radius: 8px;
+        border: none;
+        padding: 0px 20px;
+        color: #64748b;
+        background-color: transparent;
+        transition: all 0.2s;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #ffffff !important;
+        color: #1e3a8a !important;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        font-weight: 600;
+    }
+    
+    /* Cards (simulated with expanders or containers) */
+    div[data-testid="stExpander"] {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background-color: white;
+        box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+        margin-bottom: 1rem;
+    }
+    
+    /* Buttons */
+    .stButton>button {
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    .stButton>button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    
+    /* Footer */
+    .footer {
+        text-align: center;
+        color: #94a3b8;
+        font-size: 0.85rem;
+        margin-top: 4rem;
+        padding-bottom: 2rem;
+    }
+    
+    /* Compact Data Editor */
+    div[data-testid="stDataEditor"] {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -36,15 +128,15 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
         st.markdown(f"### {title}")
 
     if show_download and filename:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c2:
             st.download_button(
-                label="⬇️ Scarica PDF",
+                label="⬇️ SCARICA PDF GENERATO",
                 data=pdf_bytes,
                 file_name=filename,
                 mime="application/pdf",
                 type="primary",
-                width="stretch"
+                use_container_width=True
             )
         st.markdown("---")
 
@@ -55,34 +147,18 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
             return s.lower()
 
         if not highlight_text or highlight_text.strip() == "":
-            with st.spinner("Caricamento anteprima ad alta qualità..."):
-                images = convert_from_bytes(pdf_bytes, dpi=300)
+            with st.spinner("Caricamento anteprima..."):
+                images = convert_from_bytes(pdf_bytes, dpi=200) # Lower DPI for speed
             for i, image in enumerate(images):
-                if width_percentage < 100:
-                    lm = (100 - width_percentage) / 2
-                    c1, c2, c3 = st.columns([lm, width_percentage, lm])
-                    with c2:
-                        st.image(image, width="stretch", caption=f"Pagina {i+1}")
-                else:
-                    st.image(image, width="stretch", caption=f"Pagina {i+1}")
+                st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
                 if i < len(images) - 1:
                     st.markdown("---")
             return
 
         target_tokens = [normalize_token(t) for t in highlight_text.strip().split() if normalize_token(t)]
-        if not target_tokens:
-            images = convert_from_bytes(pdf_bytes, dpi=300)
-            for i, image in enumerate(images):
-                st.image(image, width="stretch", caption=f"Pagina {i+1}")
-                if i < len(images) - 1:
-                    st.markdown("---")
-            return
-
-        first_token = target_tokens[0]
-        try_sequence = len(target_tokens) > 1
-
+        
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        dpi = 300
+        dpi = 200 # Lower DPI for speed
         mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
 
         for i in range(doc.page_count):
@@ -95,7 +171,8 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
             words = page.get_text("words")
             found_any = False
 
-            if try_sequence:
+            if target_tokens:
+                first_token = target_tokens[0]
                 n, m = len(words), len(target_tokens)
                 for idx in range(n - m + 1):
                     if all(normalize_token(words[idx + k][4]) == target_tokens[k] for k in range(m)):
@@ -107,28 +184,20 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, width
                         rect = fitz.Rect(x0, y0, x1, y1) * mat
                         draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 120))
 
-            if not found_any:
-                for w in words:
-                    if normalize_token(w[4]) == first_token:
-                        rect = fitz.Rect(w[0], w[1], w[2], w[3]) * mat
-                        draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 120))
+                if not found_any:
+                    for w in words:
+                        if normalize_token(w[4]) == first_token:
+                            rect = fitz.Rect(w[0], w[1], w[2], w[3]) * mat
+                            draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 120))
 
             highlighted = Image.alpha_composite(img.convert("RGBA"), overlay)
-            if width_percentage < 100:
-                lm = (100 - width_percentage) / 2
-                c1, c2, c3 = st.columns([lm, width_percentage, lm])
-                with c2:
-                    st.image(highlighted, width="stretch", caption=f"Pagina {i+1}")
-            else:
-                st.image(highlighted, width="stretch", caption=f"Pagina {i+1}")
+            st.image(highlighted, use_container_width=True, caption=f"Pagina {i+1}")
             if i < doc.page_count - 1:
                 st.markdown("---")
         doc.close()
 
     except Exception as e:
-        st.error(f"Errore nella visualizzazione del PDF: {str(e)}")
-        if show_download:
-            st.info("Apri il PDF esternamente per verificare il contenuto.")
+        st.error(f"Errore anteprima PDF: {str(e)}")
 
 
 def init_session_state():
@@ -137,11 +206,10 @@ def init_session_state():
         'pdf_processed': False,
         'output_filename': None,
         'input_pdf_bytes': None,
-        'input_filename': None,
         'surname': None,
         'generated_pdf_bytes': None,
         'need_regenerate': True,
-        'structure': None,  # dict {int: (location, time, notes)}
+        'structure': None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -149,387 +217,296 @@ def init_session_state():
 
 
 def get_structure():
-    """Restituisce la struttura attiva (da session_state o default)."""
     if st.session_state.structure is None:
         st.session_state.structure = get_hardcoded_structure()
     return st.session_state.structure
 
 
 def structure_to_df(structure: dict) -> pd.DataFrame:
-    """Converte la struttura in DataFrame per st.data_editor."""
     rows = sorted(structure.items())
     return pd.DataFrame(
-        [{"Riga PDF": k, "Luogo": v[0], "Orario": v[1]} for k, v in rows],
-        columns=["Riga PDF", "Luogo", "Orario"]
+        [{"Indice": k, "Luogo": v[0], "Orario": v[1]} for k, v in rows],
+        columns=["Indice", "Luogo", "Orario"]
     )
 
 
 def df_to_structure(df: pd.DataFrame) -> dict:
-    """Converte il DataFrame editato nella struttura interna."""
     result = {}
     for _, row in df.iterrows():
         try:
-            idx = int(row["Riga PDF"])
+            idx = int(row["Indice"])
             result[idx] = (str(row["Luogo"]), str(row["Orario"]), "")
-        except (ValueError, TypeError):
-            pass
+        except: pass
     return result
 
 
+def shifts_to_df(shifts):
+    data = []
+    for s in shifts:
+        data.append({
+            "Giorno": format_day_for_display(s[0]),
+            "Data": s[1],
+            "Luogo": s[2],
+            "Orario": s[3],
+            "Pulizia Bagni": s[4] if len(s) > 4 else ""
+        })
+    return pd.DataFrame(data)
+
+
+def df_to_shifts(df):
+    shifts = []
+    for _, row in df.iterrows():
+        day_norm = normalize_day_name(row["Giorno"])
+        shifts.append((day_norm, str(row["Data"]), row["Luogo"], row["Orario"], row["Pulizia Bagni"]))
+    return shifts
+
+
 def generate_pdf_bytes(shifts, output_filename, surname):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_out:
-        tmp_out_path = tmp_out.name
     output_name = write_shifts_to_pdf(shifts, output_filename, surname)
     with open(output_name, "rb") as f:
         pdf_bytes = f.read()
-    for p in [output_name, tmp_out_path]:
-        if os.path.exists(p):
-            os.remove(p)
+    if os.path.exists(output_name):
+        os.remove(output_name)
     return pdf_bytes
 
 
-# ── App ───────────────────────────────────────────────────────────────────────
+# ── App Logic ────────────────────────────────────────────────────────────────
 
 init_session_state()
 
-st.title("📅 Generatore Turni in PDF")
-st.markdown("---")
-
-col_upload, col_surname = st.columns([2, 1])
-with col_upload:
-    uploaded_file = st.file_uploader("📁 Carica il PDF dei turni", type="pdf")
-with col_surname:
-    surname = st.text_input("👤 Cognome", placeholder="Es: Rossi")
-
-if uploaded_file and surname:
-    if st.button("🔍 Estrai turni", type="primary") or not st.session_state.pdf_processed:
-        with st.spinner("Elaborazione in corso..."):
+# ── Sidebar ──────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.image("https://www.barsa.it/wp-content/uploads/2019/12/logo-barsa-2.png", width=180)
+    st.markdown("### 📥 Caricamento")
+    uploaded_file = st.file_uploader("Scegli il PDF dei turni", type="pdf", label_visibility="collapsed")
+    surname_input = st.text_input("Cognome da cercare", placeholder="Es: Rossi", value=st.session_state.surname if st.session_state.surname else "")
+    
+    st.markdown("---")
+    if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True, disabled=not (uploaded_file and surname_input)):
+        with st.spinner("Estrazione dati..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 tmp.write(uploaded_file.read())
                 tmp_path = tmp.name
             
-            # Store path in session state for debug use in Structure tab
             st.session_state.temp_pdf_path = tmp_path
-
             tables = parse_pdf(tmp_path)
             if tables:
-                shifts = extract_shifts_for_person_hardcoded(
-                    tables, surname, structure=get_structure()
+                extracted = extract_shifts_for_person_hardcoded(
+                    tables, surname_input, structure=get_structure()
                 )
-                if shifts:
-                    st.session_state.shifts = sort_days(shifts)
+                if extracted:
+                    st.session_state.shifts = sort_days(extracted)
                     st.session_state.pdf_processed = True
-                    st.session_state.output_filename = get_output_filename(uploaded_file.name, surname)
+                    st.session_state.output_filename = get_output_filename(uploaded_file.name, surname_input)
                     st.session_state.input_pdf_bytes = uploaded_file.getvalue()
-                    st.session_state.input_filename = uploaded_file.name
-                    st.session_state.surname = surname
+                    st.session_state.surname = surname_input
                     st.session_state.need_regenerate = True
-                    st.success(f"✅ Trovati {len(shifts)} turni per {surname}")
-                    st.rerun()
+                    st.toast(f"Trovati {len(extracted)} turni!", icon="✅")
                 else:
-                    st.error(f"❌ Nessun turno trovato per {surname}")
-                    st.session_state.pdf_processed = False
+                    st.error(f"Nessun turno trovato per {surname_input}")
             else:
-                st.error("❌ Errore nella lettura del PDF")
-                st.session_state.pdf_processed = False
+                st.error("Errore nella lettura del PDF")
 
-if st.session_state.pdf_processed and st.session_state.shifts:
-    st.markdown("---")
-    tab1, tab2, tab3, tab4 = st.tabs(["📥 PDF Generato", "✏️ Modifica Turni", "📄 PDF Input", "⚙️ Struttura PDF"])
+    if st.session_state.pdf_processed:
+        st.markdown("---")
+        st.caption(f"📁 File: {uploaded_file.name if uploaded_file else '-'}")
+        st.caption(f"👤 Persona: {st.session_state.surname}")
 
-    # ── Tab 1: PDF Generato ───────────────────────────────────────────────────
+# ── Main Area ────────────────────────────────────────────────────────────────
+st.title("📅 Turnizio Bar.S.A.")
+
+if not st.session_state.pdf_processed:
+    st.info("👋 Benvenuto! Carica il PDF dei turni nella barra laterale a sinistra per iniziare.")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("""
+        ### Come usare l'app:
+        1. **Carica** il file PDF ufficiale.
+        2. **Inserisci** il tuo cognome.
+        3. **Clicca** su Genera Turni.
+        4. **Verifica** e scarica il tuo PDF pulito!
+        """)
+    with col2:
+        st.image("https://cdn-icons-png.flaticon.com/512/3394/3394866.png", width=200)
+
+else:
+    tab1, tab2, tab3 = st.tabs(["📄 PDF GENERATO", "✏️ MODIFICA TURNI", "⚙️ CONFIGURAZIONE"])
+
+    # ── TAB 1: PDF GENERATO ──────────────────────────────────────────────────
     with tab1:
-        st.markdown("### 📥 PDF Generato")
         if st.session_state.need_regenerate or st.session_state.generated_pdf_bytes is None:
-            with st.spinner("Generazione PDF in corso..."):
+            with st.spinner("Generazione file..."):
                 st.session_state.generated_pdf_bytes = generate_pdf_bytes(
                     st.session_state.shifts,
                     st.session_state.output_filename,
                     st.session_state.surname
                 )
                 st.session_state.need_regenerate = False
-        if st.session_state.generated_pdf_bytes:
-            display_pdf(
-                st.session_state.generated_pdf_bytes,
-                filename=st.session_state.output_filename,
-                show_download=True,
-                width_percentage=70,
-            )
+        
+        display_pdf(
+            st.session_state.generated_pdf_bytes,
+            filename=st.session_state.output_filename,
+            show_download=True,
+            width_percentage=80
+        )
 
-    # ── Tab 2: Modifica Turni ─────────────────────────────────────────────────
+    # ── TAB 2: MODIFICA TURNI ────────────────────────────────────────────────
     with tab2:
-        st.markdown("### ✏️ Modifica Turni")
-
-        with st.expander("➕ Aggiungi nuovo turno", expanded=False):
-            giorni_disponibili = {}
-            for shift in st.session_state.shifts:
-                day, day_number = shift[0], shift[1]
-                if day not in giorni_disponibili:
-                    giorni_disponibili[day] = (format_day_for_display(day), day_number)
-
-            day_order = {'lunedì': 1, 'martedì': 2, "mercoledi'": 3, 'giovedì': 4, 'venerdì': 5, 'sabato': 6, 'domenica': 7}
-            giorni_sorted = sorted(giorni_disponibili.items(), key=lambda x: day_order.get(x[0], 8))
-            giorni_options = [f"{display} {number}" for day, (display, number) in giorni_sorted]
-            giorni_map = {f"{display} {number}": (day, number) for day, (display, number) in giorni_sorted}
-
-            with st.form(key="add_shift_form", clear_on_submit=True):
-                c1, c2 = st.columns(2)
+        st.subheader("📋 Gestione Turni Estratti")
+        
+        # Add new shift form (Compact)
+        with st.expander("➕ Aggiungi un nuovo turno manualmente", expanded=False):
+            with st.form("new_shift_form", clear_on_submit=True):
+                c1, c2, c3 = st.columns([1, 1, 1])
                 with c1:
-                    giorno_selezionato = st.selectbox("Giorno", giorni_options)
-                    luogo = st.text_input("Luogo", placeholder="Es: Giardini del Castello")
+                    d_day = st.selectbox("Giorno", ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"])
+                    d_num = st.text_input("Data (Giorno)", placeholder="Es: 15")
                 with c2:
-                    orario = st.text_input("Orario (es: 08:00-14:00)", placeholder="08:00-14:00")
-                    pulizia_bagni_check = st.checkbox("Pulizia bagni (solo per Giardini del Castello)", value=False)
-
-                if st.form_submit_button("Aggiungi turno", type="primary", width="stretch"):
-                    if luogo:
-                        giorno_norm, data = giorni_map[giorno_selezionato]
-                        pulizia_bagni = ("Sì" if pulizia_bagni_check else "No") if "giardini del castello" in luogo.lower() else ""
-                        st.session_state.shifts.append((giorno_norm, str(data), luogo, orario, pulizia_bagni))
+                    d_loc = st.text_input("Luogo", placeholder="Es: Giardini del Castello")
+                    d_time = st.text_input("Orario", placeholder="Es: 08:00-14:00")
+                with c3:
+                    st.write("") # Spacer
+                    st.write("")
+                    d_pul = st.checkbox("Pulizia Bagni")
+                    add_btn = st.form_submit_button("AGGIUNGI ORA", use_container_width=True)
+                
+                if add_btn:
+                    if d_loc:
+                        new_s = (normalize_day_name(d_day), d_num, d_loc, d_time, "Sì" if d_pul else "No")
+                        st.session_state.shifts.append(new_s)
                         st.session_state.shifts = sort_days(st.session_state.shifts)
                         st.session_state.need_regenerate = True
-                        st.success(f"✅ Turno aggiunto: {format_day_for_display(giorno_norm)} {data} - {luogo} {orario}")
                         st.rerun()
-                    else:
-                        st.error("⚠️ Inserisci almeno il luogo del turno")
-
-        st.markdown("---")
-        st.markdown(f"### 📋 Lista turni ({len(st.session_state.shifts)} turni)")
-        has_bagni = has_giardini_castello(st.session_state.shifts)
-
-        with st.container():
-            if has_bagni:
-                col_day, col_space, col_loc, col_time, col_bagni = st.columns([2, 0.5, 3, 2, 1.5])
-            else:
-                col_day, col_space, col_loc, col_time = st.columns([2, 0.5, 3, 2])
-
-            with col_day: st.markdown("**Giorno**")
-            with col_loc: st.markdown("**Luogo**")
-            with col_time: st.markdown("**Orario**")
-            if has_bagni:
-                with col_bagni: st.markdown("**Pulizia bagni**")
-            st.markdown("---")
-
-            new_shifts = []
-            for i, shift in enumerate(st.session_state.shifts):
-                day, day_number, location, time = shift[:4]
-                pulizia_bagni = shift[4] if len(shift) > 4 else ""
-                day_display = format_day_for_display(day)
-
-                if has_bagni:
-                    col_day, col_space, col_loc, col_time, col_bagni = st.columns([2, 0.5, 3, 2, 1.5])
-                else:
-                    col_day, col_space, col_loc, col_time = st.columns([2, 0.5, 3, 2])
-
-                with col_day:
-                    st.text_input("Giorno", value=f"{day_display} {day_number}", disabled=True, key=f"day_{i}", label_visibility="collapsed")
-                with col_loc:
-                    new_location = st.text_input("Luogo", value=location, key=f"loc_{i}", label_visibility="collapsed")
-                with col_time:
-                    new_time = st.text_input("Orario", value=time, key=f"time_{i}", label_visibility="collapsed")
-
-                if has_bagni:
-                    with col_bagni:
-                        if "giardini del castello" in new_location.lower():
-                            current_index = 1 if pulizia_bagni.lower() == "sì" else 0
-                            new_pulizia = st.selectbox("Pulizia", ["No", "Sì"], index=current_index, key=f"bagni_{i}", label_visibility="collapsed")
-                        else:
-                            new_pulizia = ""
-                            st.text("")
-                else:
-                    new_pulizia = ""
-
-                new_shifts.append((day, day_number, new_location, new_time, new_pulizia))
-
-            st.markdown("---")
-            c_save, c_info = st.columns([1, 3])
-            with c_save:
-                if st.button("💾 Salva e Rigenera PDF", type="secondary", width="stretch"):
-                    st.session_state.shifts = new_shifts
-                    st.session_state.need_regenerate = True
-                    st.success("✅ Modifiche salvate! Vai alla tab 'PDF Generato'.")
-                    st.rerun()
-            with c_info:
-                st.info("💡 Dopo aver modificato i turni, clicca 'Salva e Rigenera PDF' e torna alla tab 'PDF Generato'")
-
-    # ── Tab 3: PDF Input ──────────────────────────────────────────────────────
-    with tab3:
-        st.markdown("### 📄 Visualizzazione PDF Input")
-        st.info("Anteprima del PDF originale con evidenziato il cognome cercato.")
-
-    # ── Tab 4: Struttura PDF ──────────────────────────────────────────────────
-    with tab4:
-        st.markdown("### ⚙️ Configurazione Struttura PDF")
-        st.info(
-            "**Come funziona l'estrazione:** \n"
-            "Il programma legge il PDF riga per riga. Quando trova il cognome cercato in una determinata riga, "
-            "assegna il **Luogo** e l'**Orario** definiti qui per quell'indice. \n\n"
-            "Gli indici partono da **0** (la prima riga subito dopo l'intestazione dei giorni)."
-        )
-        st.markdown("---")
         
-        # DEBUG PDF RIGHE
-        with st.expander("🔍 Visualizza contenuto grezzo del PDF (per debug)", expanded=False):
-            st.markdown(
-                "Usa questa tabella per identificare l'**Indice Struttura** corretto. "
-                "Cerca il nome di un collega e guarda quale indice ha la sua riga per sapere dove aggiungere o modificare un turno."
-            )
-            if hasattr(st.session_state, "temp_pdf_path") and os.path.exists(st.session_state.temp_pdf_path):
-                if st.button("🔄 Analizza righe PDF ora"):
-                    raw_data = get_raw_pdf_rows(st.session_state.temp_pdf_path)
-                    st.session_state.raw_pdf_rows = raw_data
-                
-                if hasattr(st.session_state, "raw_pdf_rows"):
-                    st.dataframe(st.session_state.raw_pdf_rows, use_container_width=True)
-            else:
-                st.warning("⚠️ Carica prima un PDF nella pagina principale per analizzarne il contenuto.")
-
-        st.markdown("---")
-
-        # Editor
-        current_structure = get_structure()
-        df = structure_to_df(current_structure)
-
-        st.markdown("#### 📝 Tabella di Corrispondenza")
-        st.write("Modifica direttamente i valori nella tabella qui sotto:")
-        edited_df = st.data_editor(
-            df,
+        st.markdown("#### Tabella Modifica Rapida")
+        st.caption("Puoi modificare i testi direttamente nella tabella qui sotto. Ricordati di cliccare Salva.")
+        
+        # Shift data editor (Compact & Modern)
+        edited_shifts_df = st.data_editor(
+            shifts_to_df(st.session_state.shifts),
             num_rows="dynamic",
             use_container_width=True,
             column_config={
-                "Riga PDF": st.column_config.NumberColumn(
-                    "Indice",
-                    help="Posizione della riga nel PDF sorgente",
-                    min_value=0,
-                    step=1,
-                    required=True,
-                ),
-                "Luogo": st.column_config.TextColumn("Luogo assegnato", required=True),
-                "Orario": st.column_config.TextColumn("Orario assegnato", help="Es: 08:00-14:00"),
-            },
-            key="structure_editor",
+                "Giorno": st.column_config.SelectboxColumn("Giorno", options=["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"], required=True),
+                "Data": st.column_config.TextColumn("Data", width="small"),
+                "Luogo": st.column_config.TextColumn("Luogo", width="large"),
+                "Orario": st.column_config.TextColumn("Orario", width="medium"),
+                "Pulizia Bagni": st.column_config.SelectboxColumn("Pulizia", options=["", "No", "Sì"], width="small"),
+            }
         )
-
-        st.markdown("---")
-
-        # Scalamento righe
-        st.markdown("#### 🛠️ Gestione Rapida Righe")
-        st.write("Inserisci o rimuovi righe: il programma sposterà automaticamente tutti gli altri indici.")
-        col_ins1, col_ins2, col_ins3 = st.columns([1, 1.5, 1.5])
-        with col_ins1:
-            ins_idx = st.number_input("Indice riga (Riga PDF)", min_value=0, value=0, step=1)
-        with col_ins2:
-            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("➕ Inserisci riga qui", use_container_width=True, help="Inserisce una nuova riga all'indice specificato e fa slittare in avanti tutte le successive"):
-                new_struct = {}
-                for k, v in current_structure.items():
-                    if k >= ins_idx:
-                        new_struct[k + 1] = v
-                    else:
-                        new_struct[k] = v
-                new_struct[ins_idx] = ("Nuovo Luogo", "", "")
-                st.session_state.structure = new_struct
+        
+        c_save, c_empty = st.columns([1, 2])
+        with c_save:
+            if st.button("💾 SALVA MODIFICHE E RIGENERA PDF", use_container_width=True, type="primary"):
+                st.session_state.shifts = df_to_shifts(edited_shifts_df)
+                st.session_state.need_regenerate = True
+                st.success("Modifiche salvate con successo!")
                 st.rerun()
-        with col_ins3:
-            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("➖ Rimuovi riga qui", use_container_width=True, help="Rimuove la riga all'indice specificato e fa arretrare tutte le successive"):
-                if ins_idx in current_structure:
-                    new_struct = {}
-                    for k, v in current_structure.items():
-                        if k < ins_idx:
-                            new_struct[k] = v
-                        elif k > ins_idx:
-                            new_struct[k - 1] = v
-                    st.session_state.structure = new_struct
-                    st.rerun()
-                else:
-                    st.warning(f"La riga {ins_idx} non esiste nella struttura.")
+
+    # ── TAB 3: CONFIGURAZIONE ────────────────────────────────────────────────
+    with tab3:
+        st.subheader("⚙️ Configurazione Tecnica")
+        
+        with st.expander("🔍 Strumenti Debug PDF", expanded=False):
+            st.write("Visualizza esattamente come il programma legge le righe del PDF per correggere la struttura.")
+            if hasattr(st.session_state, "temp_pdf_path") and os.path.exists(st.session_state.temp_pdf_path):
+                if st.button("Analizza Righe PDF"):
+                    st.session_state.raw_pdf_rows = get_raw_pdf_rows(st.session_state.temp_pdf_path)
+                
+                if hasattr(st.session_state, "raw_pdf_rows"):
+                    st.dataframe(st.session_state.raw_pdf_rows, use_container_width=True, height=300)
+            else:
+                st.warning("Carica un PDF per attivare il debug.")
 
         st.markdown("---")
-
-        c_apply, c_download, c_reset = st.columns([1, 1, 1])
-
-        with c_apply:
-            if st.button("💾 Applica e Salva Modifiche", type="primary", width="stretch"):
-                new_structure = df_to_structure(edited_df)
-                if new_structure:
-                    st.session_state.structure = new_structure
-                    # Salva localmente
-                    try:
-                        with open("structure.json", "wb") as f:
-                            f.write(structure_to_json_bytes(new_structure))
-                        st.toast("Salvato localmente su structure.json", icon="💾")
-                    except Exception as e:
-                        st.error(f"Errore salvataggio file: {e}")
-                        
-                    # Forza la ri-estrazione se c'è già un PDF caricato
-                    st.session_state.pdf_processed = False
-                    st.session_state.shifts = None
-                    
-                    # Rimuoviamo i widget temporanei dei turni per forzare il refresh dei valori
-                    for key in list(st.session_state.keys()):
-                        if key.startswith(("loc_", "time_", "bagni_", "day_")):
-                            del st.session_state[key]
-                            
-                    st.session_state.need_regenerate = True
-                    st.success(f"✅ Struttura aggiornata. Ora puoi ri-estrarre i turni con i nuovi dati.")
+        
+        # Structure Table
+        st.markdown("#### Mappatura Indici PDF")
+        st.caption("Definisce quale Luogo/Orario assegnare in base alla riga in cui viene trovato il cognome.")
+        
+        col_ed1, col_ed2 = st.columns([2, 1])
+        with col_ed1:
+            edited_struct_df = st.data_editor(
+                structure_to_df(get_structure()),
+                num_rows="dynamic",
+                use_container_width=True,
+                height=400,
+                column_config={
+                    "Indice": st.column_config.NumberColumn("Indice Riga", disabled=False),
+                    "Luogo": st.column_config.TextColumn("Luogo Predefinito"),
+                    "Orario": st.column_config.TextColumn("Orario Predefinito"),
+                }
+            )
+        
+        with col_ed2:
+            st.markdown("##### 🛠️ Azioni Rapide")
+            ins_idx = st.number_input("Indice di riferimento", min_value=0, value=0)
+            if st.button("➕ Inserisci riga qui", use_container_width=True):
+                curr = get_structure()
+                new_s = {}
+                for k, v in curr.items():
+                    if k >= ins_idx: new_s[k+1] = v
+                    else: new_s[k] = v
+                new_s[ins_idx] = ("Nuovo Luogo", "", "")
+                st.session_state.structure = new_s
+                st.rerun()
+                
+            if st.button("➖ Rimuovi riga qui", use_container_width=True):
+                curr = get_structure()
+                if ins_idx in curr:
+                    new_s = {}
+                    for k, v in curr.items():
+                        if k < ins_idx: new_s[k] = v
+                        elif k > ins_idx: new_s[k-1] = v
+                    st.session_state.structure = new_s
                     st.rerun()
-                else:
-                    st.error("❌ Struttura vuota o non valida.")
 
-        with c_download:
-            json_bytes = structure_to_json_bytes(
-                df_to_structure(edited_df) if len(edited_df) > 0 else current_structure
-            )
-            st.download_button(
-                label="⬇️ Esporta JSON per GitHub",
-                data=json_bytes,
-                file_name="structure.json",
-                mime="application/json",
-                width="stretch",
-            )
-
-        with c_reset:
-            if st.button("🔄 Ripristina Default", type="secondary", width="stretch"):
+            st.markdown("---")
+            if st.button("💾 APPLICA E SALVA", type="primary", use_container_width=True):
+                st.session_state.structure = df_to_structure(edited_struct_df)
+                try:
+                    with open("structure.json", "wb") as f:
+                        f.write(structure_to_json_bytes(st.session_state.structure))
+                    st.success("Struttura salvata localmente!")
+                except: st.error("Impossibile salvare il file.")
+                st.session_state.pdf_processed = False
+                st.rerun()
+                
+            if st.button("🔄 Ripristina Default", use_container_width=True):
                 st.session_state.structure = get_hardcoded_structure()
                 st.session_state.pdf_processed = False
-                st.session_state.shifts = None
-                st.success("Struttura ripristinata ai valori iniziali.")
                 st.rerun()
 
         st.markdown("---")
-
-        # Upload JSON
-        uploaded_json = st.file_uploader("📂 Importa struttura da file JSON", type="json", key="json_uploader")
-        if uploaded_json is not None:
-            try:
-                new_structure = structure_from_json_bytes(uploaded_json.read())
-                st.session_state.structure = new_structure
-                st.success(f"✅ Struttura importata: {len(new_structure)} righe caricate.")
+        st.markdown("#### 📂 Import/Export Struttura")
+        c1, c2 = st.columns(2)
+        with c1:
+            up_json = st.file_uploader("Carica structure.json", type="json")
+            if up_json:
+                st.session_state.structure = structure_from_json_bytes(up_json.read())
+                st.success("JSON caricato!")
                 st.rerun()
-            except Exception as e:
-                st.error(f"❌ Errore nel caricamento del file JSON: {e}")
+        with c2:
+            st.write("") # Spacer
+            st.write("")
+            st.download_button(
+                "⬇️ Scarica JSON per GitHub",
+                data=structure_to_json_bytes(get_structure()),
+                file_name="structure.json",
+                mime="application/json",
+                use_container_width=True
+            )
 
-        st.warning(
-            "⚠️ **Nota importante sulla persistenza:** \n"
-            "Se l'app gira su Streamlit Cloud, le modifiche salvate sono temporanee. "
-            "Per renderle permanenti, clicca su **Esporta JSON per GitHub**, scarica il file e caricalo "
-            "nella tua repository sostituendo quello esistente."
-        )
-
-# ── Preview PDF Input (Visible on every tab) ──────────────────────────────────
-if st.session_state.pdf_processed and st.session_state.input_pdf_bytes:
+    # ── PDF Input Preview (Bottom) ───────────────────────────────────────────
     st.markdown("---")
-    with st.expander("📄 Visualizza PDF Originale (Anteprima)", expanded=True):
+    with st.expander("📄 Visualizza Anteprima PDF Originale (Input)", expanded=False):
         display_pdf(
             st.session_state.input_pdf_bytes,
             highlight_text=st.session_state.surname,
-            width_percentage=100,
         )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
-st.markdown("---")
 st.markdown(
-    "<div style='text-align: center; color: #666; font-size: 0.8em;'>Generatore Turni PDF v3.1 | Streamlit App</div>",
+    "<div class='footer'>Turnizio Bar.S.A. v4.0 | Realizzato per efficienza e precisione</div>",
     unsafe_allow_html=True
 )
