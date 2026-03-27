@@ -47,7 +47,6 @@ def get_raw_pdf_rows(file_path):
             # Calcoliamo l'indice relativo se abbiamo trovato l'header, altrimenti usiamo quello assoluto
             display_idx = row_idx - header_row_idx - 1 if header_row_idx != -1 else row_idx
             raw_rows.append({
-                "Tabella": table_idx,
                 "Riga Assoluta": row_idx,
                 "Indice Struttura": display_idx if row_idx > header_row_idx else f"Header ({row_idx})",
                 "Contenuto": [str(c).replace('\n', ' ') if c else "" for c in row]

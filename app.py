@@ -359,38 +359,43 @@ if st.session_state.pdf_processed and st.session_state.shifts:
 
     # ── Tab 4: Struttura PDF ──────────────────────────────────────────────────
     with tab4:
-        st.markdown("### ⚙️ Struttura righe PDF")
-        st.markdown(
-            "Ogni riga corrisponde a una riga della tabella nel PDF sorgente (0-indexed, dopo l'header). "
-            "**Riga PDF** è l'indice; i gap tra indici indicano righe vuote/ignorate nel PDF."
+        st.markdown("### ⚙️ Configurazione Struttura PDF")
+        st.info(
+            "**Come funziona l'estrazione:** \n"
+            "Il programma legge il PDF riga per riga. Quando trova il cognome cercato in una determinata riga, "
+            "assegna il **Luogo** e l'**Orario** definiti qui per quell'indice. \n\n"
+            "Gli indici partono da **0** (la prima riga subito dopo l'intestazione dei giorni)."
         )
         st.markdown("---")
         
         # DEBUG PDF RIGHE
-        with st.expander("🔍 Modalità Debug - Visualizza righe grezze dal PDF", expanded=False):
+        with st.expander("🔍 Visualizza contenuto grezzo del PDF (per debug)", expanded=False):
+            st.markdown(
+                "Usa questa tabella per identificare l'**Indice Struttura** corretto. "
+                "Cerca il nome di un collega e guarda quale indice ha la sua riga per sapere dove aggiungere o modificare un turno."
+            )
             if hasattr(st.session_state, "temp_pdf_path") and os.path.exists(st.session_state.temp_pdf_path):
-                if st.button("🔄 Carica/Aggiorna righe PDF"):
+                if st.button("🔄 Analizza righe PDF ora"):
                     raw_data = get_raw_pdf_rows(st.session_state.temp_pdf_path)
                     st.session_state.raw_pdf_rows = raw_data
                 
                 if hasattr(st.session_state, "raw_pdf_rows"):
-                    st.markdown("Questa tabella mostra esattamente cosa legge il PDF per ogni riga.")
                     st.dataframe(st.session_state.raw_pdf_rows, use_container_width=True)
             else:
-                st.warning("Carica prima un PDF per vedere le righe grezze.")
+                st.warning("⚠️ Carica prima un PDF nella pagina principale per analizzarne il contenuto.")
 
         st.markdown("---")
 
         # Upload JSON
-        uploaded_json = st.file_uploader("📂 Carica struttura da JSON", type="json", key="json_uploader")
+        uploaded_json = st.file_uploader("📂 Importa struttura da file JSON", type="json", key="json_uploader")
         if uploaded_json is not None:
             try:
                 new_structure = structure_from_json_bytes(uploaded_json.read())
                 st.session_state.structure = new_structure
-                st.success(f"✅ Struttura caricata: {len(new_structure)} righe definite.")
+                st.success(f"✅ Struttura importata: {len(new_structure)} righe caricate.")
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ Errore nel parsing del JSON: {e}")
+                st.error(f"❌ Errore nel caricamento del file JSON: {e}")
 
         st.markdown("---")
 
@@ -398,7 +403,8 @@ if st.session_state.pdf_processed and st.session_state.shifts:
         current_structure = get_structure()
         
         # Scalamento righe
-        st.markdown("**Gestione righe (scalamento automatico)**")
+        st.markdown("#### 🛠️ Gestione Rapida Righe")
+        st.write("Inserisci o rimuovi righe: il programma sposterà automaticamente tutti gli altri indici.")
         col_ins1, col_ins2, col_ins3 = st.columns([1, 1.5, 1.5])
         with col_ins1:
             ins_idx = st.number_input("Indice riga (Riga PDF)", min_value=0, value=0, step=1)
@@ -433,21 +439,22 @@ if st.session_state.pdf_processed and st.session_state.shifts:
 
         df = structure_to_df(current_structure)
 
-        st.markdown("**Modifica manuale la struttura** — modifica luogo e orario:")
+        st.markdown("#### 📝 Tabella di Corrispondenza")
+        st.write("Modifica direttamente i valori nella tabella qui sotto:")
         edited_df = st.data_editor(
             df,
             num_rows="dynamic",
             use_container_width=True,
             column_config={
                 "Riga PDF": st.column_config.NumberColumn(
-                    "Riga PDF",
-                    help="Indice 0-based della riga nel PDF sorgente (dopo l'header)",
+                    "Indice",
+                    help="Posizione della riga nel PDF sorgente",
                     min_value=0,
                     step=1,
                     required=True,
                 ),
-                "Luogo": st.column_config.TextColumn("Luogo", required=True),
-                "Orario": st.column_config.TextColumn("Orario", help="Formato HH:MM-HH:MM, vuoto per Riposo/Ferie"),
+                "Luogo": st.column_config.TextColumn("Luogo assegnato", required=True),
+                "Orario": st.column_config.TextColumn("Orario assegnato", help="Es: 08:00-14:00"),
             },
             key="structure_editor",
         )
@@ -455,7 +462,7 @@ if st.session_state.pdf_processed and st.session_state.shifts:
         c_apply, c_download, c_reset = st.columns([1, 1, 1])
 
         with c_apply:
-            if st.button("✅ Applica e Salva", type="primary", width="stretch", help="Applica la struttura e salva sul file locale structure.json"):
+            if st.button("💾 Applica e Salva Modifiche", type="primary", width="stretch"):
                 new_structure = df_to_structure(edited_df)
                 if new_structure:
                     st.session_state.structure = new_structure
@@ -477,7 +484,7 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                             del st.session_state[key]
                             
                     st.session_state.need_regenerate = True
-                    st.success(f"✅ Struttura aggiornata ({len(new_structure)} righe). Ri-estrai i turni.")
+                    st.success(f"✅ Struttura aggiornata. Ora puoi ri-estrarre i turni con i nuovi dati.")
                     st.rerun()
                 else:
                     st.error("❌ Struttura vuota o non valida.")
@@ -487,7 +494,7 @@ if st.session_state.pdf_processed and st.session_state.shifts:
                 df_to_structure(edited_df) if len(edited_df) > 0 else current_structure
             )
             st.download_button(
-                label="⬇️ Scarica JSON",
+                label="⬇️ Esporta JSON per GitHub",
                 data=json_bytes,
                 file_name="structure.json",
                 mime="application/json",
@@ -495,23 +502,19 @@ if st.session_state.pdf_processed and st.session_state.shifts:
             )
 
         with c_reset:
-            if st.button("🔄 Reset a default", type="secondary", width="stretch"):
+            if st.button("🔄 Ripristina Default", type="secondary", width="stretch"):
                 st.session_state.structure = get_hardcoded_structure()
                 st.session_state.pdf_processed = False
                 st.session_state.shifts = None
-                st.success("Struttura resettata al default.")
+                st.success("Struttura ripristinata ai valori iniziali.")
                 st.rerun()
 
         st.markdown("---")
-        st.info(
-            "**Workflow per PDF aggiornato:** \n"
-            "1. Aggiungi/rimuovi righe con i bottoni sopra o modifica i testi nella tabella\n"
-            "2. Clicca **Applica e Salva** (salverà sul disco locale se non sei su Cloud)\n"
-            "3. Torna in cima, carica il nuovo PDF e clicca **Estrai turni**\n"
-            "\n**Nota per la persistenza su Streamlit Cloud:** \n"
-            "Le modifiche fatte qui sono temporanee per la sessione se l'app gira su cloud. "
-            "Per renderle permanenti su GitHub, clicca **Scarica JSON**, sostituisci il file "
-            "`structure.json` nella tua repository locale e fai un nuovo push su GitHub."
+        st.warning(
+            "⚠️ **Nota importante sulla persistenza:** \n"
+            "Se l'app gira su Streamlit Cloud, le modifiche salvate sono temporanee. "
+            "Per renderle permanenti, clicca su **Esporta JSON per GitHub**, scarica il file e caricalo "
+            "nella tua repository sostituendo quello esistente."
         )
 
 # ── Preview PDF Input (Visible on every tab) ──────────────────────────────────
