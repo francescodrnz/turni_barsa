@@ -355,9 +355,19 @@ def write_shifts_to_pdf(shifts, input_filename, surname):
     pdf.cell(200, 10, txt=f"Turni di lavoro {surname}", ln=True, align='C')
     pdf.ln(10)
 
+    # Calculate total table width to center it
+    if has_bagni:
+        table_width = 25 + 10 + 80 + 40 + 30 # = 185
+    else:
+        table_width = 30 + 15 + 85 + 60 # = 190
+    
+    page_width = 210 # A4 width in mm
+    x_offset = (page_width - table_width) / 2
+
     pdf.set_font("Arial", size=12)
     pdf.set_fill_color(200, 200, 200)
 
+    pdf.set_x(x_offset)
     if has_bagni:
         pdf.cell(25, 10, 'Giorno', border='LTB', align='R', fill=True)
         pdf.cell(10, 10, ' ', border='RTB', align='C', fill=True)
@@ -376,6 +386,7 @@ def write_shifts_to_pdf(shifts, input_filename, surname):
         pulizia_bagni = shift[4] if len(shift) > 4 else ""
         day_display = format_day_for_display(day)
 
+        pdf.set_x(x_offset)
         if has_bagni:
             pdf.cell(25, 10, day_display, border='LTB', align='R')
             pdf.cell(10, 10, day_number, border='RTB', align='L')

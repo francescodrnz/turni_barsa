@@ -342,7 +342,7 @@ with st.sidebar:
     st.image("https://www.barsa.it/wp-content/uploads/2019/12/logo-barsa-2.png", width=180)
     st.markdown("### 📥 Caricamento")
     uploaded_file = st.file_uploader("Scegli il PDF dei turni", type="pdf", label_visibility="collapsed")
-    surname_input = st.text_input("Cognome da cercare", placeholder="Es: Rossi", value=st.session_state.surname if st.session_state.surname else "")
+    surname_input = st.text_input("Cognome da cercare", placeholder="Es: Rossi", value=st.session_state.surname if st.session_state.surname else "Crudele Francesco")
     
     st.markdown("---")
     if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True, disabled=not (uploaded_file and surname_input)):
