@@ -273,6 +273,7 @@ def init_session_state():
         'generated_pdf_bytes': None,
         'need_regenerate': True,
         'structure': None,
+        'last_processed_key': None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -345,10 +346,24 @@ with st.sidebar:
     surname_input = st.text_input("Cognome da cercare", placeholder="Es: Rossi", value=st.session_state.surname if st.session_state.surname else "Crudele Francesco")
     
     st.markdown("---")
-    if st.button("🚀 GENERA TURNI", type="primary", use_container_width=True, disabled=not (uploaded_file and surname_input)):
+    
+    # ── Processing Trigger Logic ─────────────────────────────────────────────
+    current_proc_key = None
+    if uploaded_file and surname_input:
+        current_proc_key = f"{uploaded_file.name}_{surname_input}_{len(uploaded_file.getvalue())}"
+    
+    should_auto_trigger = (
+        current_proc_key is not None and 
+        st.session_state.get("last_processed_key") != current_proc_key
+    )
+    
+    btn_clicked = st.button("🚀 GENERA TURNI", type="primary", use_container_width=True, disabled=not (uploaded_file and surname_input))
+    
+    if btn_clicked or should_auto_trigger:
         with st.spinner("Estrazione dati..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(uploaded_file.read())
+                pdf_data = uploaded_file.getvalue()
+                tmp.write(pdf_data)
                 tmp_path = tmp.name
             
             st.session_state.temp_pdf_path = tmp_path
@@ -361,9 +376,10 @@ with st.sidebar:
                     st.session_state.shifts = sort_days(extracted)
                     st.session_state.pdf_processed = True
                     st.session_state.output_filename = get_output_filename(uploaded_file.name, surname_input)
-                    st.session_state.input_pdf_bytes = uploaded_file.getvalue()
+                    st.session_state.input_pdf_bytes = pdf_data
                     st.session_state.surname = surname_input
                     st.session_state.need_regenerate = True
+                    st.session_state.last_processed_key = current_proc_key
                     st.toast(f"Trovati {len(extracted)} turni!", icon="✅")
                 else:
                     st.error(f"Nessun turno trovato per {surname_input}")
