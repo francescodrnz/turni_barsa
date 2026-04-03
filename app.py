@@ -172,9 +172,6 @@ def get_output_filename(input_filename, surname):
 
 
 def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highlight_text=None, use_zoom=False):
-    if title:
-        st.markdown(f"### {title}")
-
     if show_download and filename:
         c1, c2, c3 = st.columns([1, 1, 1])
         with c2:
@@ -188,11 +185,17 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
             )
         st.markdown("---")
 
-    # Zoom Controller - Only show slider if use_zoom is True
+    # Create a container for the PDF images so we can place the slider below it
+    pdf_container = st.container()
+
+    # Zoom Controller - placed BELOW the PDF container in terms of variable usage, 
+    # but we'll use the value inside the container above it.
+    zoom_val = 100
     if use_zoom:
         zoom_val = st.slider("Livello Zoom (%)", 100, 400, 100, step=10, key=f"zoom_{hash(pdf_bytes)}")
-    else:
-        zoom_val = 100
+
+    if title:
+        st.caption(f"**{title}**")
 
     try:
         def normalize_token(s):
@@ -201,7 +204,6 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
             return s.lower()
 
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        # Use 200 DPI for generated PDF to keep it sharp, 150 for input PDF (standard/zoom)
         dpi = 150 if use_zoom else 200 
         mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
         
@@ -249,9 +251,8 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
         
         doc.close()
         
-        # Wrapping in a scaling div to force horizontal scroll in zoom-container
-        # Both PDFs now use the same scrollable container style
-        st.markdown(f"""
+        # Displaying the PDF inside the container (which is above the slider and title in the UI)
+        pdf_container.markdown(f"""
             <div class="zoom-container">
                 <div style="width: {zoom_val}%; min-width: 100%; margin: 0 auto;">
                     {''.join(html_images)}
@@ -261,6 +262,7 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
 
     except Exception as e:
         st.error(f"Errore visualizzazione PDF: {str(e)}")
+
 
 
 def init_session_state():
@@ -577,12 +579,12 @@ else:
 
     # ── PDF Input Preview (Bottom) ───────────────────────────────────────────
     st.markdown("---")
-    with st.expander("📄 Visualizza PDF Originale (Input)", expanded=False):
-        display_pdf(
-            st.session_state.input_pdf_bytes,
-            highlight_text=st.session_state.surname,
-            use_zoom=True
-        )
+    display_pdf(
+        st.session_state.input_pdf_bytes,
+        title="📄 Visualizza PDF Originale (Input)",
+        highlight_text=st.session_state.surname,
+        use_zoom=True
+    )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown(
