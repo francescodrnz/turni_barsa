@@ -188,20 +188,12 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
             )
         st.markdown("---")
 
-    if not use_zoom:
-        # Standard display for generated PDF (no zoom needed)
-        try:
-            images = convert_from_bytes(pdf_bytes, dpi=200)
-            for i, image in enumerate(images):
-                st.image(image, use_container_width=True, caption=f"Pagina {i+1}")
-            return
-        except Exception as e:
-            st.error(f"Errore anteprima: {e}")
-            return
+    # Zoom Controller - Only show slider if use_zoom is True
+    if use_zoom:
+        zoom_val = st.slider("Livello Zoom (%)", 100, 400, 100, step=10, key=f"zoom_{hash(pdf_bytes)}")
+    else:
+        zoom_val = 100
 
-    # Zoom Controller (only for Input PDF)
-    zoom_val = st.slider("Livello Zoom (%)", 100, 400, 100, step=10, key=f"zoom_{hash(pdf_bytes)}")
-    
     try:
         def normalize_token(s):
             s = s.strip()
@@ -209,7 +201,8 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
             return s.lower()
 
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        dpi = 150 # Faster rendering for zoomable view
+        # Use 200 DPI for generated PDF to keep it sharp, 150 for input PDF (standard/zoom)
+        dpi = 150 if use_zoom else 200 
         mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
         
         target_tokens = []
@@ -257,6 +250,7 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
         doc.close()
         
         # Wrapping in a scaling div to force horizontal scroll in zoom-container
+        # Both PDFs now use the same scrollable container style
         st.markdown(f"""
             <div class="zoom-container">
                 <div style="width: {zoom_val}%; min-width: 100%; margin: 0 auto;">
