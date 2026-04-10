@@ -282,6 +282,10 @@ def extract_shifts_for_person_hardcoded(tables, surname, structure=None):
 
                         final_location = location if location else "Turno"
                         final_time = time_slot if time_slot else ""
+                        
+                        time_override = re.search(r'(\d{1,2}[,:]\d{2})\s*[-/]\s*(\d{1,2}[,:]\d{2})', str(cell))
+                        if time_override:
+                            final_time = time_override.group(0).replace(',', ':').replace('/', '-')
 
                         if "CHIUSO" in final_location.upper() or "CHIUSA" in final_location.upper():
                             shifts.append((day_name, day_number, "Riposo - " + final_location, "", ""))
