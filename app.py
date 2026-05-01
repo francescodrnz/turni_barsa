@@ -167,27 +167,40 @@ st.markdown("""
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+import json
+
 def download_adobe_pdf(adobe_url):
-    match = re.search(r'/id/(urn:aaid:[^?#]+)', adobe_url)
-    if not match:
-        return None
-    urn = match.group(1)
-    
-    download_url = f"https://documentcloud.adobe.com/link/track?uri={urn}"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
     
     try:
-        response = requests.get(download_url, headers=headers, stream=True, allow_redirects=True)
+        # 1. Fetch the Adobe Acrobat share page
+        response = requests.get(adobe_url, headers=headers)
         if response.status_code != 200:
-            alt_url = f"https://documentcloud.adobe.com/link/content?uri={urn}"
-            response = requests.get(alt_url, headers=headers, stream=True, allow_redirects=True)
-
-        if response.status_code == 200:
-            return response.content
-    except Exception:
-        pass
+            return None
+            
+        # 2. Extract the JSON configuration embedded in the page
+        match = re.search(r'<script id="dc_data" type="application/json">(.*?)</script>', response.text)
+        if not match:
+            return None
+            
+        data = json.loads(match.group(1))
+        
+        # 3. Find the direct S3/Adobe download URL
+        download_url = data.get('data', {}).get('file', {}).get('assetURLs', {}).get('download_url')
+        
+        if not download_url:
+            return None
+            
+        # 4. Download the actual PDF file
+        pdf_response = requests.get(download_url, headers=headers, stream=True)
+        if pdf_response.status_code == 200:
+            return pdf_response.content
+            
+    except Exception as e:
+        print(f"Error downloading from Adobe: {e}")
+        
     return None
 
 def get_output_filename(input_filename, surname):
