@@ -168,6 +168,7 @@ st.markdown("""
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 import json
+import urllib.parse
 
 def download_adobe_pdf(adobe_url):
     headers = {
@@ -178,12 +179,12 @@ def download_adobe_pdf(adobe_url):
         # 1. Fetch the Adobe Acrobat share page
         response = requests.get(adobe_url, headers=headers)
         if response.status_code != 200:
-            return None
+            return None, None
             
         # 2. Extract the JSON configuration embedded in the page
         match = re.search(r'<script id="dc_data" type="application/json">(.*?)</script>', response.text)
         if not match:
-            return None
+            return None, None
             
         data = json.loads(match.group(1))
         
@@ -191,17 +192,27 @@ def download_adobe_pdf(adobe_url):
         download_url = data.get('data', {}).get('file', {}).get('assetURLs', {}).get('download_url')
         
         if not download_url:
-            return None
+            return None, None
             
+        # Extract filename from download_url query params
+        filename = "Link_Adobe_Acrobat.pdf"
+        parsed_url = urllib.parse.urlparse(download_url)
+        query = urllib.parse.parse_qs(parsed_url.query)
+        disposition = query.get('response-content-disposition', [''])[0]
+        if disposition:
+            name_match = re.search(r'filename="?([^"]+)"?', disposition)
+            if name_match:
+                filename = urllib.parse.unquote(name_match.group(1))
+
         # 4. Download the actual PDF file
         pdf_response = requests.get(download_url, headers=headers, stream=True)
         if pdf_response.status_code == 200:
-            return pdf_response.content
+            return pdf_response.content, filename
             
     except Exception as e:
         print(f"Error downloading from Adobe: {e}")
         
-    return None
+    return None, None
 
 def get_output_filename(input_filename, surname):
     match = re.search(r"DAL.*\.pdf", input_filename, re.IGNORECASE)
@@ -422,9 +433,11 @@ with st.sidebar:
     if btn_clicked or should_auto_trigger:
         with st.spinner("Scaricamento ed estrazione dati..." if adobe_url else "Estrazione dati..."):
             if adobe_url and not uploaded_file:
-                pdf_data = download_adobe_pdf(adobe_url)
+                pdf_data, extracted_filename = download_adobe_pdf(adobe_url)
                 if not pdf_data:
                     st.error("Errore nel download del PDF dal link fornito. Assicurati che sia un link valido.")
+                elif extracted_filename:
+                    file_name_display = extracted_filename
             
             if pdf_data:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
