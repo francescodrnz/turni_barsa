@@ -5,3 +5,4 @@ streamlit
 pdf2image
 Pillow
 PyMuPDF
+requests

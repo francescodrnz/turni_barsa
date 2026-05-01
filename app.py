@@ -1,4 +1,5 @@
 import streamlit as st
+import requests
 from main import (
     parse_pdf,
     extract_shifts_for_person_hardcoded,
@@ -165,6 +166,29 @@ st.markdown("""
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+def download_adobe_pdf(adobe_url):
+    match = re.search(r'/id/(urn:aaid:[^?#]+)', adobe_url)
+    if not match:
+        return None
+    urn = match.group(1)
+    
+    download_url = f"https://documentcloud.adobe.com/link/track?uri={urn}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    try:
+        response = requests.get(download_url, headers=headers, stream=True, allow_redirects=True)
+        if response.status_code != 200:
+            alt_url = f"https://documentcloud.adobe.com/link/content?uri={urn}"
+            response = requests.get(alt_url, headers=headers, stream=True, allow_redirects=True)
+
+        if response.status_code == 200:
+            return response.content
+    except Exception:
+        pass
+    return None
 
 def get_output_filename(input_filename, surname):
     match = re.search(r"DAL.*\.pdf", input_filename, re.IGNORECASE)
@@ -344,53 +368,79 @@ init_session_state()
 with st.sidebar:
     st.image("https://www.barsa.it/wp-content/uploads/2019/12/logo-barsa-2.png", width=180)
     st.markdown("### 📥 Caricamento")
-    uploaded_file = st.file_uploader("Scegli il PDF dei turni", type="pdf", label_visibility="collapsed")
+    
+    input_method = st.radio("Metodo di caricamento", ["File PDF", "Link Adobe Acrobat"], label_visibility="collapsed")
+    
+    uploaded_file = None
+    adobe_url = ""
+    
+    if input_method == "File PDF":
+        uploaded_file = st.file_uploader("Scegli il PDF dei turni", type="pdf", label_visibility="collapsed")
+    else:
+        adobe_url = st.text_input("Inserisci il link Adobe Acrobat", placeholder="https://acrobat.adobe.com/id/...")
+        
     surname_input = st.text_input("Cognome da cercare", placeholder="Es: Rossi", value=st.session_state.surname if st.session_state.surname else "Crudele Francesco")
     
     st.markdown("---")
     
     # ── Processing Trigger Logic ─────────────────────────────────────────────
     current_proc_key = None
-    if uploaded_file and surname_input:
-        current_proc_key = f"{uploaded_file.name}_{surname_input}_{len(uploaded_file.getvalue())}"
+    pdf_data = None
+    file_name_display = "-"
     
+    if (uploaded_file or adobe_url) and surname_input:
+        if uploaded_file:
+            current_proc_key = f"{uploaded_file.name}_{surname_input}_{len(uploaded_file.getvalue())}"
+            pdf_data = uploaded_file.getvalue()
+            file_name_display = uploaded_file.name
+        elif adobe_url:
+            current_proc_key = f"{adobe_url}_{surname_input}"
+            file_name_display = "Link_Adobe_Acrobat.pdf"
+            
     should_auto_trigger = (
         current_proc_key is not None and 
-        st.session_state.get("last_processed_key") != current_proc_key
+        st.session_state.get("last_processed_key") != current_proc_key and
+        uploaded_file is not None
     )
     
-    btn_clicked = st.button("🚀 GENERA TURNI", type="primary", use_container_width=True, disabled=not (uploaded_file and surname_input))
+    btn_disabled = not ((uploaded_file is not None or adobe_url.strip() != "") and surname_input.strip() != "")
+    btn_clicked = st.button("🚀 GENERA TURNI", type="primary", use_container_width=True, disabled=btn_disabled)
     
     if btn_clicked or should_auto_trigger:
-        with st.spinner("Estrazione dati..."):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                pdf_data = uploaded_file.getvalue()
-                tmp.write(pdf_data)
-                tmp_path = tmp.name
+        with st.spinner("Scaricamento ed estrazione dati..." if adobe_url else "Estrazione dati..."):
+            if adobe_url and not uploaded_file:
+                pdf_data = download_adobe_pdf(adobe_url)
+                if not pdf_data:
+                    st.error("Errore nel download del PDF dal link fornito. Assicurati che sia un link valido.")
             
-            st.session_state.temp_pdf_path = tmp_path
-            tables = parse_pdf(tmp_path)
-            if tables:
-                extracted = extract_shifts_for_person_hardcoded(
-                    tables, surname_input, structure=get_structure()
-                )
-                if extracted:
-                    st.session_state.shifts = sort_days(extracted)
-                    st.session_state.pdf_processed = True
-                    st.session_state.output_filename = get_output_filename(uploaded_file.name, surname_input)
-                    st.session_state.input_pdf_bytes = pdf_data
-                    st.session_state.surname = surname_input
-                    st.session_state.need_regenerate = True
-                    st.session_state.last_processed_key = current_proc_key
-                    st.toast(f"Trovati {len(extracted)} turni!", icon="✅")
+            if pdf_data:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(pdf_data)
+                    tmp_path = tmp.name
+                
+                st.session_state.temp_pdf_path = tmp_path
+                tables = parse_pdf(tmp_path)
+                if tables:
+                    extracted = extract_shifts_for_person_hardcoded(
+                        tables, surname_input, structure=get_structure()
+                    )
+                    if extracted:
+                        st.session_state.shifts = sort_days(extracted)
+                        st.session_state.pdf_processed = True
+                        st.session_state.output_filename = get_output_filename(file_name_display, surname_input)
+                        st.session_state.input_pdf_bytes = pdf_data
+                        st.session_state.surname = surname_input
+                        st.session_state.need_regenerate = True
+                        st.session_state.last_processed_key = current_proc_key
+                        st.toast(f"Trovati {len(extracted)} turni!", icon="✅")
+                    else:
+                        st.error(f"Nessun turno trovato per {surname_input}")
                 else:
-                    st.error(f"Nessun turno trovato per {surname_input}")
-            else:
-                st.error("Errore nella lettura del PDF")
+                    st.error("Errore nella lettura del PDF")
 
     if st.session_state.pdf_processed:
         st.markdown("---")
-        st.caption(f"📁 File: {uploaded_file.name if uploaded_file else '-'}")
+        st.caption(f"📁 File: {file_name_display}")
         st.caption(f"👤 Persona: {st.session_state.surname}")
 
 # ── Main Area ────────────────────────────────────────────────────────────────
