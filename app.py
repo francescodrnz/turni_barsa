@@ -529,7 +529,7 @@ else:
                 "Data": st.column_config.TextColumn("Data", width="small"),
                 "Luogo": st.column_config.TextColumn("Luogo", width="large"),
                 "Orario": st.column_config.TextColumn("Orario", width="medium"),
-                "Pulizia Bagni": st.column_config.SelectboxColumn("Pulizia", options=["", "No", "Sì"], width="small"),
+                "Pulizia Bagni": st.column_config.SelectboxColumn("Pulizia", options=["", "No", "Sì", "19:00", "Mattina"], width="small"),
             }
         )
         

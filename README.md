@@ -39,9 +39,23 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   (`STATUS_LOCATIONS`: Riposo, Ferie, Malattia, Assente, Permessi, Infortunio,
   Non lavora) non hanno orario. I giorni dove il cognome non compare diventano
   "Riposo".
+- **Pulizia bagni** (decisione 0004): `_legend` legge la legenda a destra
+  della tabella. Ogni barretta colorata vuota prende il significato dal
+  paragrafo subito sopra ("19:00"/"ripasso" → `19:00`, "mattino"/"12:00" →
+  `Mattina`); i rettangoli con testo dentro sono evidenziazioni e si saltano.
+  `read_shift_table` salva il colore di ogni cella dei giorni (`colori`, con
+  `_fill_at`) e la legenda (`legenda`). A Giardini del Castello,
+  `extract_shifts_for_person` mette nel quinto campo il significato del
+  colore (`_legend_meaning`, tollera sfumature fino a 0,1), "No" per una cella
+  bianca, un avviso per un colore che non è in legenda. Senza legenda il campo
+  resta vuoto.
+- Le celle unite allargano verso destra e verso il basso i bbox di righe e
+  colonne di pdfplumber: per trovare una cella si usano solo i bordi sinistro
+  e superiore (`col.bbox[0]`, `row.bbox[1]`).
 - `write_shifts_to_pdf` genera il PDF con fpdf. Se fra i turni c'è Giardini del
-  Castello, aggiunge la colonna "Pulizia bagni", con "No" di default. Il nome del
-  file è `Turni <cognome> dal … .pdf`, preso dal nome del PDF di partenza.
+  Castello, aggiunge la colonna "Pulizia bagni" ("No" dove il valore manca). Il
+  nome del file è `Turni <cognome> dal … .pdf`, preso dal nome del PDF di
+  partenza.
 
 **App (`app.py`)**
 - Barra laterale: si carica il PDF da file o da link Adobe Acrobat. Il link
@@ -86,6 +100,10 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
 - 2026-10-23, `pdf_turni/`: 18 PDF con testo letti senza errori, 535 persone e
   4693 turni, nessuna riga col cognome senza luogo o senza orario. 5 scansioni
   rifiutate con il messaggio sulla scansione.
+- 2026-10-23, pulizia bagni su `pdf_turni/`: sett. 44 6 "19:00" e 7
+  "Mattina"; 11 PDF con la sola regola delle 19:00, 7 "19:00" ciascuno;
+  gennaio e febbraio 7 + 7; nessun valore sui PDF senza legenda. Un solo
+  avviso (29 dic, giovedì 01).
 
 ## Limiti e comportamenti noti
 - **Dipende dai bordi di Excel**: se l'azienda cambia lo stile dei bordi in
@@ -100,6 +118,12 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
   parola a `QUALIFIER_WORDS` in `main.py`.
 - **Stati nuovi** (es. "Congedo"): finiscono come luogo con l'avviso "orario
   non trovato". Rimedio: aggiungerli a `STATUS_LOCATIONS`.
+- **Pulizia bagni**: dipende dalla legenda. Una regola scritta con parole
+  nuove (senza "19:00", "ripasso", "mattino", "12:00") non viene riconosciuta e
+  le celle di quel colore danno l'avviso "colore che non è in legenda".
+  Rimedio: aggiungere la parola alle chiavi in `_legend`. Una barretta con
+  sfumatura molto diversa dalle celle (29 dic, viola) dà lo stesso avviso: si
+  corregge a mano nella tab Modifica turni.
 - I nomi dei luoghi sono quelli scritti nel PDF, maiuscole comprese ("Permessi
   vari").
 - Il cognome si cerca come sottostringa: "Rossi" trova anche "Rossini".
@@ -135,11 +159,21 @@ for p in sorted(glob.glob('pdf_turni/*.pdf')):
            and (not r['luogo'] or not (r['orario'] or main.is_status_location(r['luogo'])))]
     print('ok' if not bad else 'DA GUARDARE', p, bad)"
 
+# Legenda e celle colorate di Giardini del Castello (colore → significato)
+.venv/bin/python -c "
+import main, sys
+t = main.read_shift_table(sys.argv[1]); print(t['legenda'])
+for r in t['rows']:
+    if r['luogo'] and 'castello' in r['luogo'].lower():
+        print(r['orario'], {t['days'][c][0]: (r['celle'][c], r['colori'][c]) for c in t['days'] if r['colori'][c]})" "file.pdf"
+
 # App in locale
 uv pip install -p .venv/bin/python -r requirements.txt && .venv/bin/streamlit run app.py
 ```
 
 ## Decisioni collegate
+- [0004](decisioni/0004-pulizia-bagni-dalla-legenda.md) — Pulizia bagni dal
+  colore delle celle, con il significato letto dalla legenda.
 - [0003](decisioni/0003-luoghi-dai-bordi-del-pdf.md) — Luogo e orario letti dai
   bordi del PDF, senza `structure.json`.
 - [0001](decisioni/0001-struttura-hardcoded-per-indice.md) e

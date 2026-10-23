@@ -106,6 +106,74 @@ def _text_in(page, x0, top, x1, bottom):
     return ' '.join(pdfplumber.utils.extract_text(chars).split()) if chars else ''
 
 
+def _color(rect):
+    """Colore di riempimento come tupla RGB a 2 decimali; None se bianco o assente."""
+    color = rect.get('non_stroking_color')
+    if color is None:
+        return None
+    if isinstance(color, (int, float)):
+        color = (color,)
+    if not all(isinstance(c, (int, float)) for c in color):
+        return None
+    color = tuple(round(c, 2) for c in color)
+    if len(color) == 1:
+        color = color * 3
+    return None if all(c >= 0.99 for c in color) else color
+
+
+def _fill_at(page, x, y):
+    """Colore della cella nel punto: l'ultimo rettangolo pieno disegnato lì sopra (i bordi sono esclusi)."""
+    color = None
+    for r in page.rects:
+        if r.get('fill') and r['width'] > 3 and r['height'] > 4 \
+                and r['x0'] <= x <= r['x1'] and r['top'] <= y <= r['bottom']:
+            color = _color(r)
+    return color
+
+
+def _legend(page, right):
+    """
+    Legenda della pulizia bagni, a destra della tabella: barrette colorate vuote
+    sotto un testo di regola ("...ripasso alle ore 19:00", "pulizia del mattino",
+    "1° passaggio ore 12:00"). Ritorna {colore: "19:00" | "Mattina"}. I rettangoli
+    colorati con del testo dentro sono evidenziazioni, non barrette.
+    """
+    words = [w for w in page.extract_words() if w['x0'] > right]
+    legend = {}
+    for r in page.rects:
+        color = _color(r)
+        if not r.get('fill') or color is None or _is_dark(color) or r['x0'] <= right \
+                or r['width'] <= 20 or r['height'] <= 4:
+            continue
+        if any(r['x0'] <= (c['x0'] + c['x1']) / 2 <= r['x1'] and r['top'] <= (c['top'] + c['bottom']) / 2 <= r['bottom']
+               for c in page.chars):
+            continue
+        # Solo il paragrafo subito sopra la barretta: le righe distanti più di 5 punti sono un'altra regola.
+        text, edge, gap = [], r['top'], 40
+        for w in sorted((w for w in words if w['bottom'] <= r['top'] + 1 and w['x1'] > r['x0'] and w['x0'] < r['x1']),
+                        key=lambda w: -w['bottom']):
+            if w['bottom'] < edge - gap:
+                break
+            text.append(w['text'])
+            edge, gap = min(edge, w['top']), 5
+        text = ' '.join(text).upper()
+        meanings = {m for m, keys in (("Mattina", ("MATTIN", "12:00", "12,00")), ("19:00", ("19:00", "19,00", "RIPASSO")))
+                    if any(k in text for k in keys)}
+        if len(meanings) == 1:
+            legend[color] = meanings.pop()
+    return legend
+
+
+def _legend_meaning(color, legend):
+    """Significato di un colore di cella: anche la stessa tinta in una sfumatura vicina (Excel a volte le cambia)."""
+    if color in legend:
+        return legend[color]
+    near = min(legend, key=lambda l: max(abs(a - b) for a, b in zip(l, color)), default=None)
+    if near and max(abs(a - b) for a, b in zip(near, color)) <= 0.1:
+        return legend[near]
+    return None
+
+
 def read_shift_table(file_path):
     """
     Legge la tabella dei turni e assegna a ogni riga luogo e orario.
@@ -146,6 +214,12 @@ def read_shift_table(file_path):
             for i in range(a, b + 1):
                 time_cell[i] = text
 
+        # Le celle unite allargano i bbox di righe e colonne verso destra e verso il
+        # basso: affidabili sono solo i bordi sinistro e superiore.
+        col_lefts = [col.bbox[0] for col in table.columns] + [table.bbox[2]]
+        day_x = {c: (col_lefts[c], col_lefts[c + 1]) for c in days}
+        legend = _legend(page, max(x1 for _, x1 in day_x.values()))
+
         rows = []
         location = None
         for a, b in _segments(page, row_tops, x0, x1):
@@ -157,19 +231,21 @@ def read_shift_table(file_path):
             for i in range(a, b + 1):
                 cells = [str(c).strip() if c else '' for c in data[i]]
                 is_header = i <= header_idx or cells[1].lower() == 'turno'
+                colors = {c: _fill_at(page, sum(day_x[c]) / 2, (row_tops[i] + row_tops[i + 1]) / 2) for c in days}
                 rows.append({
                     "riga": i,
                     "etichetta": label,
                     "luogo": None if is_header else location,
                     "orario": '' if is_header else normalize_time(time_cell[i]),
                     "celle": cells,
+                    "colori": colors,
                     "header": is_header,
                 })
 
     if len({r["luogo"] for r in rows if r["luogo"]}) < MIN_LOCATIONS:
         raise ValueError("Struttura del PDF non riconosciuta (bordi diversi dal solito?): "
                          "controlla la tabella a mano.")
-    return {"days": days, "rows": rows}
+    return {"days": days, "rows": rows, "legenda": legend}
 
 
 def table_debug_rows(table):
@@ -192,8 +268,11 @@ def extract_shifts_for_person(table, surname):
     Estrae i turni per il cognome specificato da una tabella di read_shift_table.
     Ritorna (turni, avvisi): gli avvisi segnalano righe col cognome senza luogo
     o senza orario, da controllare a mano.
+    A Giardini del Castello, se il PDF ha la legenda, la pulizia bagni viene dal
+    colore della cella ("19:00", "Mattina" o "No").
     """
     days = table["days"]
+    legend = table.get("legenda", {})
     shifts = []
     warnings = []
     days_with_shifts = set()
@@ -226,7 +305,17 @@ def extract_shifts_for_person(table, surname):
                 if not final_time:
                     warnings.append(f"{format_day_for_display(day_name)} {day_number}: {location}, "
                                     f"orario non trovato nella riga {row['riga']} del PDF.")
-                shifts.append((day_name, day_number, location, final_time, ""))
+                pulizia = ""
+                if legend and "giardini del castello" in location.lower():
+                    color = row["colori"].get(col_idx)
+                    if color is None:
+                        pulizia = "No"
+                    elif _legend_meaning(color, legend):
+                        pulizia = _legend_meaning(color, legend)
+                    else:
+                        warnings.append(f"{format_day_for_display(day_name)} {day_number}: cella colorata a "
+                                        f"{location} con un colore che non è in legenda, controlla la pulizia bagni.")
+                shifts.append((day_name, day_number, location, final_time, pulizia))
 
     if not days_with_shifts:
         warnings.append(f"{surname} non compare nel PDF.")
