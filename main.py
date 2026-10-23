@@ -14,7 +14,9 @@ def debug_print(*args, **kwargs):
         print(*args, **kwargs)
 
 def normalize_day_name(day_name):
-    day_name = day_name.lower().strip()
+    # Il PDF scrive i giorni a volte con l'accento (lunedì) a volte con l'apostrofo (lunedi')
+    day_name = day_name.lower().strip().replace('’', "'")
+    day_name = re.sub(r"(i'|ì)$", "ì", day_name)
     if day_name == 'mercoledì':
         return "mercoledi'"
     return day_name
@@ -38,7 +40,7 @@ def get_raw_pdf_rows(file_path):
             row = table[row_idx]
             if not row: continue
             for cell in row:
-                if cell and re.search(r"([a-zàèéìòù']+)\s+(\d+)", str(cell), re.IGNORECASE):
+                if cell and re.search(r"([a-zàèéìòù'’]+)\s+(\d+)", str(cell), re.IGNORECASE):
                     header_row_idx = row_idx
                     break
             if header_row_idx != -1: break
@@ -188,7 +190,7 @@ def extract_days_from_header(tables):
             for cell in row:
                 if cell:
                     cell_text = str(cell).strip()
-                    match = re.match(r"([a-zàèéìòù']+)\s+(\d+)", cell_text, re.IGNORECASE)
+                    match = re.match(r"([a-zàèéìòù'’]+)\s+(\d+)", cell_text, re.IGNORECASE)
                     if match:
                         giorno = normalize_day_name(match.group(1))
                         if giorno in ['lunedì', 'martedì', "mercoledi'", 'giovedì', 'venerdì', 'sabato', 'domenica']:
@@ -240,7 +242,7 @@ def extract_shifts_for_person_hardcoded(tables, surname, structure=None):
             for col_idx, cell in enumerate(row):
                 if cell:
                     cell_text = str(cell).strip()
-                    match = re.match(r"([a-zàèéìòù']+)\s+(\d+)", cell_text, re.IGNORECASE)
+                    match = re.match(r"([a-zàèéìòù'’]+)\s+(\d+)", cell_text, re.IGNORECASE)
                     if match:
                         giorno = normalize_day_name(match.group(1))
                         numero = match.group(2)
@@ -416,7 +418,7 @@ def print_shifts(shifts):
     print(f"\nTurni attuali:\n{sep}")
     header = f"{'N.':<3} {'Giorno':<12} {'Data':<6} {'Luogo':<35} {'Orario':<15}"
     if has_bagni:
-        header += " {'Pulizia bagni':<12}"
+        header += f" {'Pulizia bagni':<12}"
     print(header)
     print(sep)
     for i, shift in enumerate(shifts, 1):
