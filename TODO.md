@@ -4,18 +4,17 @@ Solo azioni aperte. Quando una è fatta si cancella: l'esito va nel README
 dell'unità o in una decisione, e la cronaca resta nel commit. Regole in
 CONVENZIONI.md, idee non urgenti in BACKLOG.md.
 
-## Documentazione
-- [S] Scrivere `README.md` alla radice con le sezioni della Parte C: com'è
-  fatto il parser (indici di riga, `structure.json`, fallback in `main.py`),
-  il flusso delle correzioni provvisorie e permanenti da Streamlit, come si
-  lancia in locale.
+## Verifiche
+- [S] Rigenerare i turni di Crudele Francesco sul PDF della sett. 44 e
+  confrontarli a occhio con la tabella originale (controllo di `/revisione`
+  dopo la rimozione della struttura di riserva, decisione 0002).
+- [S] Provare l'app in locale (`pip install -r requirements.txt`,
+  `streamlit run app.py`) come scritto nel README.
 
-## Pulizia
-- [S] Togliere `__pycache__/app.cpython-314.pyc` da git e aggiungere
-  `__pycache__/` a `.gitignore`.
-- [S] Allineare (o togliere) la struttura di fallback in
-  `get_hardcoded_structure()` di `main.py`: non corrisponde più a
-  `structure.json`.
+## CLI
+- [S] `main.py`: rispondere "s" a "Sono necessarie modifiche ai turni?" va in
+  `ImportError` (`modify_shifts` non esiste più). Togliere la domanda o
+  rimettere la funzione.
 
 ## Parser
 - [M] Decidere se proseguire con `lavori/allineamento-righe-per-contenuto.md`,

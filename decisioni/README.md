@@ -8,3 +8,4 @@ Modello in `0000-modello.md`. Le regole stanno in `../CONVENZIONI.md`.
 | N | Titolo | Stato | Unità |
 |---|---|---|---|
 | 0001 | Significato delle righe scritto a mano, per indice di riga | decisa | trasversale |
+| 0002 | Niente struttura di riserva nel codice: structure.json è l'unica fonte | decisa | trasversale |

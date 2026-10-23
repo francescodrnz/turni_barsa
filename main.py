@@ -57,10 +57,11 @@ def get_raw_pdf_rows(file_path):
 
 def get_hardcoded_structure(json_path=None):
     """
-    Carica la struttura da un file JSON se disponibile, altrimenti usa quella hardcoded.
+    Carica la struttura da structure.json, che ne è l'unica fonte.
     Il JSON ha la forma: {"0": ["Luogo", "HH:MM-HH:MM", ""], ...}
+    Se il file manca o non si legge solleva un errore: meglio fermarsi che
+    estrarre i turni con una mappa vecchia.
     """
-    # Prova a caricare dal JSON
     search_paths = [json_path] if json_path else []
     search_paths += [
         os.path.join(os.path.dirname(__file__), "structure.json"),
@@ -73,84 +74,8 @@ def get_hardcoded_structure(json_path=None):
                     raw = json.load(f)
                 return {int(k): tuple(v) for k, v in raw.items()}
             except Exception as e:
-                print(f"Avviso: impossibile caricare {path}: {e}")
-
-    # Fallback hardcoded
-    return {
-        0: ("Giardini del Castello", "08:00-14:00", ""),
-        1: ("Giardini del Castello", "08:00-14:00", ""),
-        2: ("Giardini del Castello", "14:00-21:00", ""),
-        3: ("Giardini del Castello", "16:00-22:00", ""),
-        4: ("Giardini del Castello", "16:00-22:00", ""),
-        5: ("Villa Bonelli", "09:00-13:00", ""),
-        6: ("Villa Bonelli", "16:00-20:00", ""),
-        7: ("Giardini v.le Giannone", "08:30-12:30", ""),
-        8: ("Giardini v.le Giannone", "16:30-20:30", ""),
-        9: ("Parco dell'Umanità", "09:00-11:00", ""),
-        10: ("Parco dell'Umanità", "16:00-18:00", ""),
-        11: ("Parco dell'Umanità", "16:00-20:00", ""),
-        12: ("Giardini viale Manzoni-Via Da Vinci", "10:00-12:00", ""),
-        13: ("Giardini viale Manzoni-Via Da Vinci", "16:15-20:15", ""),
-        14: ("Giardini viale Manzoni-Via Da Vinci", "10:30-12:30", ""),
-        15: ("Giardini viale Manzoni-Via Da Vinci", "17:15-20:15", ""),
-        16: ("Paladisfida Borgia", "14:30-23:30", ""),
-        17: ("Paladisfida Borgia", "08:15-13:15", ""),
-        18: ("Paladisfida Borgia", "14:30-23:30", ""),
-        19: ("Canne della Battaglia", "08:45-14:45", ""),
-        20: ("Cantina della sfida", "09:00-13:00", ""),
-        21: ("Cantina della sfida", "15:00-19:00", ""),
-        22: ("Stadio Puttilli", "08:00-12:00", ""),
-        23: ("Stadio Puttilli", "10:00-13:00", ""),
-        24: ("Stadio Puttilli", "15:00-18:00", ""),
-        25: ("Giardini via Chieffi", "10:00-13:00", ""),
-        26: ("Giardini via Chieffi", "17:00-20:00", ""),
-        27: ("Giardini Stadio Simeone", "10:00-13:00", ""),
-        28: ("Giardini Stadio Simeone", "17:00-20:00", ""),
-        29: ("Palazzo di Città", "06:00-12:00", ""),
-        30: ("Palazzo di Città", "12:00-18:00", ""),
-        31: ("Palazzo di Città", "18:00-24:00", ""),
-        32: ("Palazzo di Città", "06:00-14:00", ""),
-        33: ("Palazzo di Città", "14:00-22:00", ""),
-        34: ("Cimitero", "07:30-12:30", ""),
-        35: ("Cimitero", "15:00-19:00", ""),
-        36: ("Cimitero", "06:30-13:30", ""),
-        39: ("Sede Bar.S.A.", "00:00-06:20", ""),
-        40: ("Sede Bar.S.A.", "06:40-13:00", ""),
-        41: ("Sede Bar.S.A.", "11:40-18:00", ""),
-        42: ("Sede Bar.S.A.", "18:00-24:00", ""),
-        43: ("Sede Bar.S.A.", "00:00-08:00", ""),
-        44: ("Sede Bar.S.A.", "08:00-16:00", ""),
-        45: ("Sede Bar.S.A.", "16:00-24:00", ""),
-        47: ("Distribuzione Prodotti", "15:00-20:00", ""),
-        49: ("Riposo", "", ""),
-        50: ("Riposo", "", ""),
-        51: ("Riposo", "", ""),
-        52: ("Riposo", "", ""),
-        53: ("Riposo", "", ""),
-        54: ("Riposo", "", ""),
-        55: ("Riposo", "", ""),
-        56: ("Riposo", "", ""),
-        57: ("2° Riposo", "", ""),
-        58: ("2° Riposo", "", ""),
-        59: ("2° Riposo", "", ""),
-        60: ("2° Riposo", "", ""),
-        61: ("2° Riposo", "", ""),
-        62: ("2° Riposo", "", ""),
-        63: ("Ferie", "", ""),
-        64: ("Ferie", "", ""),
-        65: ("Ferie", "", ""),
-        66: ("Ferie", "", ""),
-        67: ("Ferie", "", ""),
-        68: ("Malattia", "", ""),
-        69: ("Malattia", "", ""),
-        70: ("Malattia", "", ""),
-        72: ("Permessi Vari", "", ""),
-        73: ("Permessi Vari", "", ""),
-        74: ("Permessi Vari", "", ""),
-        75: ("Permessi Vari", "", ""),
-        76: ("Permessi Vari", "", ""),
-        77: ("Permessi Vari", "", ""),
-    }
+                raise RuntimeError(f"Impossibile caricare {path}: {e}") from e
+    raise FileNotFoundError(f"structure.json non trovato (cercato in: {', '.join(p for p in search_paths if p)})")
 
 def structure_to_json_bytes(structure: dict) -> bytes:
     """Serializza la struttura (dict int->tuple) in JSON bytes scaricabili."""
