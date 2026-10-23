@@ -226,7 +226,7 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
                 file_name=filename,
                 mime="application/pdf",
                 type="primary",
-                use_container_width=True
+                width="stretch"
             )
         st.markdown("---")
 
@@ -370,7 +370,7 @@ init_session_state()
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.image("https://www.barsa.it/wp-content/uploads/2019/12/logo-barsa-2.png", width=180)
+    st.image("https://www.barsa.it/wp-content/uploads/2024/05/barsalogo.png", width=180)
     st.markdown("### 📥 Caricamento")
     
     input_method = st.radio("Metodo di caricamento", ["File PDF", "Link Adobe Acrobat"], label_visibility="collapsed")
@@ -408,7 +408,7 @@ with st.sidebar:
     )
     
     btn_disabled = not ((uploaded_file is not None or adobe_url.strip() != "") and surname_input.strip() != "")
-    btn_clicked = st.button("🚀 GENERA TURNI", type="primary", use_container_width=True, disabled=btn_disabled)
+    btn_clicked = st.button("🚀 GENERA TURNI", type="primary", width="stretch", disabled=btn_disabled)
     
     if btn_clicked or should_auto_trigger:
         with st.spinner("Scaricamento ed estrazione dati..." if adobe_url else "Estrazione dati..."):
@@ -506,7 +506,7 @@ else:
                     st.write("") # Spacer
                     st.write("")
                     d_pul = st.checkbox("Pulizia Bagni")
-                    add_btn = st.form_submit_button("AGGIUNGI ORA", use_container_width=True)
+                    add_btn = st.form_submit_button("AGGIUNGI ORA", width="stretch")
                 
                 if add_btn:
                     if d_loc:
@@ -523,7 +523,7 @@ else:
         edited_shifts_df = st.data_editor(
             shifts_to_df(st.session_state.shifts),
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Giorno": st.column_config.SelectboxColumn("Giorno", options=["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"], required=True),
                 "Data": st.column_config.TextColumn("Data", width="small"),
@@ -535,7 +535,7 @@ else:
         
         c_save, c_empty = st.columns([1, 2])
         with c_save:
-            if st.button("💾 SALVA MODIFICHE E RIGENERA PDF", use_container_width=True, type="primary"):
+            if st.button("💾 SALVA MODIFICHE E RIGENERA PDF", width="stretch", type="primary"):
                 st.session_state.shifts = df_to_shifts(edited_shifts_df)
                 st.session_state.need_regenerate = True
                 st.success("Modifiche salvate con successo!")
@@ -546,7 +546,7 @@ else:
         st.subheader("🔍 Come è stato letto il PDF")
         st.caption("Luogo e orario che il programma ha assegnato a ogni riga della tabella. "
                    "Se un turno è sbagliato, qui si vede se è sbagliata la lettura; la correzione si fa in Modifica turni.")
-        st.dataframe(table_debug_rows(st.session_state.table), use_container_width=True, height=600, hide_index=True)
+        st.dataframe(table_debug_rows(st.session_state.table), width="stretch", height=600, hide_index=True)
 
     # ── PDF Input Preview (Bottom) ───────────────────────────────────────────
     st.markdown("---")
