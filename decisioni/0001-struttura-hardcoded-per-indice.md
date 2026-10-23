@@ -1,6 +1,6 @@
 # 0001 — Significato delle righe scritto a mano, per indice di riga
 
-Stato: decisa il 2026-03-27
+Stato: superata da 0003 (decisa il 2026-03-27)
 Unità: trasversale
 
 ## Contesto

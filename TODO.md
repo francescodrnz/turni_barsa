@@ -4,7 +4,10 @@ Solo azioni aperte. Quando una è fatta si cancella: l'esito va nel README
 dell'unità o in una decisione, e la cronaca resta nel commit. Regole in
 CONVENZIONI.md, idee non urgenti in BACKLOG.md.
 
-## Parser
-- [M] Decidere se proseguire con `lavori/allineamento-righe-per-contenuto.md`,
-  anche solo con la parte degli avvisi al posto del fallback silenzioso a
-  "Riposo".
+## Rilascio
+- [S] Push su `main` e prova su Streamlit Cloud con la sett. 44: tre tab,
+  avvisi, download.
+
+## App
+- [S] Sostituire `use_container_width` con `width=` in `app.py`: Streamlit
+  lo segnala come deprecato, e Streamlit Cloud installa l'ultima versione.

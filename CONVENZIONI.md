@@ -151,7 +151,7 @@ smistato tutto e committato.
 ## Parte C — Specifico di questo progetto
 
 ### Le unità
-Una sola: il repo intero (parser in `main.py` + `structure.json`, interfaccia
+Una sola: il repo intero (parser in `main.py`, interfaccia
 Streamlit in `app.py`). Il README è `README.md` alla radice. `old/` contiene
 script vecchi non più usati.
 
@@ -161,12 +161,12 @@ Sezioni fisse, sempre queste, vuote se non servono:
 comportamenti noti` · `Comandi utili` · `Decisioni collegate`.
 
 ### Esempi di taglia
-- S: aggiornare `structure.json` per una riga nuova o un orario cambiato;
+- S: aggiungere una parola ai qualificatori o agli stati in `main.py`;
   correggere una normalizzazione (es. `lunedi'` con l'apostrofo).
 - M: cambiare la logica di estrazione in `main.py`; una pagina o un flusso
   nuovo in `app.py`.
-- L: un metodo nuovo di lettura del PDF (es.
-  `lavori/allineamento-righe-per-contenuto.md`); una sorgente nuova dei turni.
+- L: un metodo nuovo di lettura del PDF (es. OCR per le scansioni); una
+  sorgente nuova dei turni.
 
 ### Cosa controlla /revisione
 Oltre alle regole vincolanti di `CLAUDE.md`:
@@ -174,9 +174,11 @@ Oltre alle regole vincolanti di `CLAUDE.md`:
   malattie e permessi dei colleghi.
 - `main.py` gira ancora in locale senza Streamlit (import e CLI).
 - Dopo una modifica al parser: turni di Crudele Francesco rigenerati
-  sull'ultimo PDF e confrontati a occhio con la tabella originale.
-- Nessuna riga del PDF che finisce in "Riposo" o in un luogo sbagliato senza
-  avviso.
+  sull'ultimo PDF e confrontati a occhio con la tabella originale, più il
+  controllo su tutti i PDF di `pdf_turni/` (comando nel README): nessun "DA
+  GUARDARE", errori solo sulle scansioni.
+- Nessuna riga col cognome che finisce in "Riposo" o in un luogo sbagliato
+  senza avviso.
 
 ### Cosa guarda /secondo-parere
 - Il PDF cambia layout senza preavviso: righe aggiunte o tolte, orari

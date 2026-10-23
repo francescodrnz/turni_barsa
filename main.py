@@ -2,7 +2,6 @@ import pdfplumber
 import os
 import re
 import glob
-import json
 from datetime import datetime
 from fpdf import FPDF
 import sys
@@ -26,209 +25,218 @@ def format_day_for_display(day_name):
         return "mercoledì"
     return day_name
 
-def get_raw_pdf_rows(file_path):
-    """Ritorna una lista di tuple (indice_riga_tabella, contenuto_riga) per debug."""
-    tables = read_pdf_tables(file_path)
-    if not tables:
-        return []
-    
-    raw_rows = []
-    for table_idx, table in enumerate(tables):
-        header_row_idx = -1
-        # Cerchiamo l'header per dare un contesto agli indici
-        for row_idx in range(min(3, len(table))):
-            row = table[row_idx]
-            if not row: continue
-            for cell in row:
-                if cell and re.search(r"([a-zàèéìòù'’]+)\s+(\d+)", str(cell), re.IGNORECASE):
-                    header_row_idx = row_idx
-                    break
-            if header_row_idx != -1: break
-        
-        for row_idx, row in enumerate(table):
-            # Calcoliamo l'indice relativo se abbiamo trovato l'header, altrimenti usiamo quello assoluto
-            display_idx = row_idx - header_row_idx - 1 if header_row_idx != -1 else row_idx
-            raw_rows.append({
-                "Riga Assoluta": row_idx,
-                "Indice Struttura": display_idx if row_idx > header_row_idx else f"Header ({row_idx})",
-                "Contenuto": [str(c).replace('\n', ' ') if c else "" for c in row]
-            })
-    return raw_rows
+DAY_NAMES = ['lunedì', 'martedì', "mercoledi'", 'giovedì', 'venerdì', 'sabato', 'domenica']
+DAY_HEADER = re.compile(r"([a-zàèéìòù'’]+)\s+(\d+)", re.IGNORECASE)
+TIME_RANGE = re.compile(r"(\d{1,2})[:,.]+(\d{2})\s*[-/]?\s*(\d{1,2})[:,.]+(\d{2})")
 
-def get_hardcoded_structure(json_path=None):
-    """
-    Carica la struttura da structure.json, che ne è l'unica fonte.
-    Il JSON ha la forma: {"0": ["Luogo", "HH:MM-HH:MM", ""], ...}
-    Se il file manca o non si legge solleva un errore: meglio fermarsi che
-    estrarre i turni con una mappa vecchia.
-    """
-    search_paths = [json_path] if json_path else []
-    search_paths += [
-        os.path.join(os.path.dirname(__file__), "structure.json"),
-        "structure.json"
-    ]
-    for path in search_paths:
-        if path and os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-                return {int(k): tuple(v) for k, v in raw.items()}
-            except Exception as e:
-                raise RuntimeError(f"Impossibile caricare {path}: {e}") from e
-    raise FileNotFoundError(f"structure.json non trovato (cercato in: {', '.join(p for p in search_paths if p)})")
+# Etichette di colonna 0 che non sono luoghi ma dicono quando vale il blocco sopra
+# ("domenica", "sabato, domenica e fest. Feriali", "dal Lun. al Sabato").
+QUALIFIER_WORDS = {'dal', 'al', 'e', 'ed', 'solo', 'fest', 'festivi', 'festivo', 'feriali', 'feriale'}
 
-def structure_to_json_bytes(structure: dict) -> bytes:
-    """Serializza la struttura (dict int->tuple) in JSON bytes scaricabili."""
-    serializable = {str(k): list(v) for k, v in sorted(structure.items())}
-    return json.dumps(serializable, ensure_ascii=False, indent=2).encode("utf-8")
+# Luoghi che sono stati della persona, non posti di lavoro: non hanno orario.
+STATUS_LOCATIONS = ('riposo', 'ferie', 'malattia', 'assente', 'permess', 'infortunio', 'non lavora')
 
-def structure_from_json_bytes(data: bytes) -> dict:
-    """Deserializza JSON bytes in struttura (dict int->tuple)."""
-    raw = json.loads(data.decode("utf-8"))
-    return {int(k): tuple(v) for k, v in raw.items()}
+MIN_LOCATIONS = 5
 
-def read_pdf_tables(file_path):
-    try:
-        with pdfplumber.open(file_path) as pdf:
-            all_tables = []
-            for page in pdf.pages:
-                tables = page.extract_tables()
-                all_tables.extend(tables)
-            return all_tables
-    except Exception as e:
-        print(f"Errore nella lettura del PDF: {str(e)}")
-        return None
 
-def parse_pdf(file_path):
-    return read_pdf_tables(file_path)
-
-def extract_days_from_header(tables):
-    days = []
-    for table in tables:
-        if not table:
+def is_qualifier(label):
+    words = re.findall(r"[a-zàèéìòù]+", label.lower())
+    if not words:
+        return False
+    for w in words:
+        if w in QUALIFIER_WORDS:
             continue
-        for row_idx in range(min(3, len(table))):
-            row = table[row_idx]
-            if not row:
-                continue
-            debug_print(f"Debug: Analizzando header riga {row_idx}: {row}")
-            for cell in row:
-                if cell:
-                    cell_text = str(cell).strip()
-                    match = re.match(r"([a-zàèéìòù'’]+)\s+(\d+)", cell_text, re.IGNORECASE)
-                    if match:
-                        giorno = normalize_day_name(match.group(1))
-                        if giorno in ['lunedì', 'martedì', "mercoledi'", 'giovedì', 'venerdì', 'sabato', 'domenica']:
-                            days.append((giorno, match.group(2)))
-                            debug_print(f"Debug: Trovato giorno: {giorno} {match.group(2)}")
-            if days:
-                break
-        if days:
-            break
-    debug_print(f"Debug: Giorni estratti: {days}")
-    return days
+        if len(w) >= 3 and any(d.startswith(w) or w.startswith(d.rstrip("ì'")) for d in DAY_NAMES):
+            continue
+        return False
+    return True
 
-def extract_shifts_for_person_hardcoded(tables, surname, structure=None):
+
+def normalize_time(text):
+    """'12,00-18,00', '09:0011:00', '15::00-21:00', '14:30-23:30 Rossi' -> 'HH:MM-HH:MM'."""
+    m = TIME_RANGE.search(text or '')
+    if not m:
+        return ''
+    return f"{int(m[1]):02d}:{m[2]}-{int(m[3]):02d}:{m[4]}"
+
+
+def _day_columns(row):
+    cols = {}
+    for col_idx, cell in enumerate(row):
+        if cell:
+            match = DAY_HEADER.match(str(cell).strip())
+            if match:
+                giorno = normalize_day_name(match.group(1))
+                if giorno in DAY_NAMES:
+                    cols[col_idx] = (giorno, match.group(2))
+    return cols
+
+
+def _is_dark(color):
+    if color is None:
+        return False
+    if isinstance(color, (int, float)):
+        color = (color,)
+    return all(isinstance(c, (int, float)) and c <= 0.5 for c in color)
+
+
+def _segments(page, row_tops, xa, xb):
     """
-    Estrae i turni per il cognome specificato.
-    structure: dict opzionale {int: (location, time_slot, notes)}.
-               Se None, carica da get_hardcoded_structure().
+    Divide le righe in blocchi: un blocco nuovo comincia dove, fra xa e xb, c'è
+    un bordo orizzontale. Excel li disegna solo fra un blocco e l'altro.
     """
-    if not tables:
-        return []
+    borders = [
+        o['top'] for o in page.rects + page.lines
+        if o['height'] < 3 and o['x0'] < xa + 5 and o['x1'] > xb - 5
+        and _is_dark(o.get('non_stroking_color') if o['object_type'] == 'rect' else o.get('stroking_color'))
+    ]
+    segments = []
+    for i, top in enumerate(row_tops[:-1]):
+        if not segments or any(abs(y - top) < 2 for y in borders):
+            segments.append([i, i])
+        else:
+            segments[-1][1] = i
+    return segments
 
-    days = extract_days_from_header(tables)
-    if not days:
-        print("Errore: Non è stato possibile trovare i giorni nelle tabelle")
-        return []
 
-    if structure is None:
-        structure = get_hardcoded_structure()
+def _text_in(page, x0, top, x1, bottom):
+    """Testo dei caratteri con il centro nel riquadro: niente testo che sconfina dal blocco vicino."""
+    chars = [c for c in page.chars
+             if x0 <= (c['x0'] + c['x1']) / 2 <= x1 and top <= (c['top'] + c['bottom']) / 2 <= bottom]
+    return ' '.join(pdfplumber.utils.extract_text(chars).split()) if chars else ''
 
+
+def read_shift_table(file_path):
+    """
+    Legge la tabella dei turni e assegna a ogni riga luogo e orario.
+    Ritorna {"days": {col: (giorno, numero)}, "rows": [{"riga", "etichetta",
+    "luogo", "orario", "celle"}]}.
+    Il luogo è l'etichetta del blocco in colonna 0 (o del blocco sopra, se
+    l'etichetta è un qualificatore come "domenica"); l'orario è la cella della
+    colonna 1, anche quando copre più righe.
+    Solleva ValueError se il PDF non ha testo o se la tabella non ha la forma attesa.
+    """
+    try:
+        pdf = pdfplumber.open(file_path)
+    except Exception as e:
+        raise ValueError(f"Impossibile leggere il PDF: {e}") from e
+    with pdf:
+        if not any(page.chars for page in pdf.pages):
+            raise ValueError("Il PDF è una scansione senza testo: non si può leggere.")
+
+        best = None
+        for page in pdf.pages:
+            for table in page.find_tables():
+                data = table.extract()
+                for header_idx in range(min(3, len(data))):
+                    days = _day_columns(data[header_idx])
+                    if days:
+                        if best is None or len(data) > len(best[2]):
+                            best = (page, table, data, header_idx, days)
+                        break
+        if best is None:
+            raise ValueError("Non trovo la tabella dei turni con l'intestazione dei giorni.")
+        page, table, data, header_idx, days = best
+
+        x0, x1, x2 = (col.bbox[0] for col in table.columns[:3])
+        row_tops = [row.bbox[1] for row in table.rows] + [table.bbox[3]]
+        time_cell = {}
+        for a, b in _segments(page, row_tops, x1, x2):
+            text = _text_in(page, x1, row_tops[a], x2, row_tops[b + 1])
+            for i in range(a, b + 1):
+                time_cell[i] = text
+
+        rows = []
+        location = None
+        for a, b in _segments(page, row_tops, x0, x1):
+            label = _text_in(page, x0, row_tops[a], x1, row_tops[b + 1])
+            if label and not is_qualifier(label):
+                location = label
+            elif not label and not any(normalize_time(time_cell[i]) for i in range(a, b + 1)):
+                location = None  # riga vuota di separazione fra le sezioni
+            for i in range(a, b + 1):
+                cells = [str(c).strip() if c else '' for c in data[i]]
+                is_header = i <= header_idx or cells[1].lower() == 'turno'
+                rows.append({
+                    "riga": i,
+                    "etichetta": label,
+                    "luogo": None if is_header else location,
+                    "orario": '' if is_header else normalize_time(time_cell[i]),
+                    "celle": cells,
+                    "header": is_header,
+                })
+
+    if len({r["luogo"] for r in rows if r["luogo"]}) < MIN_LOCATIONS:
+        raise ValueError("Struttura del PDF non riconosciuta (bordi diversi dal solito?): "
+                         "controlla la tabella a mano.")
+    return {"days": days, "rows": rows}
+
+
+def table_debug_rows(table):
+    """Una riga per riga del PDF, con luogo e orario assegnati: per la vista di controllo."""
+    return [{
+        "Riga": r["riga"],
+        "Etichetta blocco": r["etichetta"],
+        "Luogo": r["luogo"] or "",
+        "Orario": r["orario"],
+        "Contenuto": " | ".join(c.replace('\n', ' ') for c in r["celle"][2:] if c),
+    } for r in table["rows"]]
+
+
+def is_status_location(location):
+    return any(s in location.lower() for s in STATUS_LOCATIONS)
+
+
+def extract_shifts_for_person(table, surname):
+    """
+    Estrae i turni per il cognome specificato da una tabella di read_shift_table.
+    Ritorna (turni, avvisi): gli avvisi segnalano righe col cognome senza luogo
+    o senza orario, da controllare a mano.
+    """
+    days = table["days"]
     shifts = []
+    warnings = []
     days_with_shifts = set()
 
-    debug_print(f"\nCercando turni per: {surname}")
-
-    for table in tables:
-        if not table:
+    for row in table["rows"]:
+        if row["header"]:
             continue
-
-        debug_print(f"\nDebug: Processando tabella con {len(table)} righe")
-
-        day_columns = {}
-        header_row_idx = -1
-
-        for row_idx in range(min(3, len(table))):
-            row = table[row_idx]
-            if not row:
+        for col_idx, cell in enumerate(row["celle"]):
+            if col_idx not in days or not cell or surname.lower() not in cell.lower():
                 continue
-            temp_day_columns = {}
-            for col_idx, cell in enumerate(row):
-                if cell:
-                    cell_text = str(cell).strip()
-                    match = re.match(r"([a-zàèéìòù'’]+)\s+(\d+)", cell_text, re.IGNORECASE)
-                    if match:
-                        giorno = normalize_day_name(match.group(1))
-                        numero = match.group(2)
-                        if giorno in ['lunedì', 'martedì', "mercoledi'", 'giovedì', 'venerdì', 'sabato', 'domenica']:
-                            temp_day_columns[col_idx] = (giorno, numero)
-            if temp_day_columns:
-                day_columns = temp_day_columns
-                header_row_idx = row_idx
-                break
+            day_name, day_number = days[col_idx]
+            days_with_shifts.add(day_name)
+            debug_print(f"Debug: '{surname}' in {day_name} {day_number}, riga {row['riga']}: {row['luogo']} {row['orario']}")
 
-        if not day_columns:
-            continue
+            location = row["luogo"]
+            final_time = row["orario"]
+            time_override = normalize_time(cell)
+            if time_override:
+                final_time = time_override
 
-        debug_print(f"Debug: Header trovato nella riga {header_row_idx}")
-        debug_print(f"Debug: Colonne giorni: {day_columns}")
-
-        for row_idx in range(header_row_idx + 1, len(table)):
-            row = table[row_idx]
-            if not row or all(cell is None or str(cell).strip() == '' for cell in row):
-                continue
-
-            structure_idx = row_idx - header_row_idx - 1
-            debug_print(f"\nDebug: Riga {row_idx} (struttura idx {structure_idx}): {[str(cell)[:30] if cell else None for cell in row[:5]]}")
-
-            if structure_idx in structure and structure[structure_idx] is not None:
-                location, time_slot, notes = structure[structure_idx]
+            if not location:
+                warnings.append(f"{format_day_for_display(day_name)} {day_number}: riga {row['riga']} del PDF "
+                                f"senza luogo riconosciuto, controlla a mano.")
+                shifts.append((day_name, day_number, "Luogo non riconosciuto", final_time, ""))
+            elif "CHIUSO" in location.upper() or "CHIUSA" in location.upper():
+                shifts.append((day_name, day_number, "Riposo - " + location, "", ""))
+            elif is_status_location(location):
+                shifts.append((day_name, day_number, location, "", ""))
             else:
-                debug_print(f"Debug: Struttura non definita per riga {structure_idx}, uso fallback Riposo")
-                location = "Riposo"
-                time_slot = ""
-                notes = ""
+                if not final_time:
+                    warnings.append(f"{format_day_for_display(day_name)} {day_number}: {location}, "
+                                    f"orario non trovato nella riga {row['riga']} del PDF.")
+                shifts.append((day_name, day_number, location, final_time, ""))
 
-            for col_idx, cell in enumerate(row):
-                if cell and surname.lower() in str(cell).lower():
-                    if col_idx in day_columns:
-                        day_name, day_number = day_columns[col_idx]
-                        debug_print(f"Debug: Trovato '{surname}' in {day_name} {day_number} (colonna {col_idx})")
-                        days_with_shifts.add(day_name)
-
-                        final_location = location if location else "Turno"
-                        final_time = time_slot if time_slot else ""
-                        
-                        time_override = re.search(r'(\d{1,2}[,:]\d{2})\s*[-/]\s*(\d{1,2}[,:]\d{2})', str(cell))
-                        if time_override:
-                            final_time = time_override.group(0).replace(',', ':').replace('/', '-')
-
-                        if "CHIUSO" in final_location.upper() or "CHIUSA" in final_location.upper():
-                            shifts.append((day_name, day_number, "Riposo - " + final_location, "", ""))
-                        elif "riposo" in final_location.lower() or "ferie" in final_location.lower():
-                            shifts.append((day_name, day_number, final_location, "", ""))
-                        else:
-                            shifts.append((day_name, day_number, final_location, final_time, ""))
-
-                        debug_print(f"Debug: Aggiunto turno: {day_name} {day_number}, {final_location}, {final_time}")
-
-    for day_name, day_number in days:
+    if not days_with_shifts:
+        warnings.append(f"{surname} non compare nel PDF.")
+    for day_name, day_number in days.values():
         if day_name not in days_with_shifts:
             shifts.append((day_name, day_number, "Riposo", "", ""))
 
     debug_print(f"\nDebug: Totale turni trovati: {len(shifts)}")
-    return shifts
+    return shifts, warnings
+
 
 def has_giardini_castello(shifts):
     for shift in shifts:
@@ -392,15 +400,18 @@ def main():
     if pdf_path is None:
         pdf_path = input("Inserisci il nome del file PDF (inclusa estensione .pdf): ")
 
-    surname = input("Inserisci il cognome: ").strip()
-    tables = read_pdf_tables(pdf_path)
-    if tables is None:
+    surname = ""
+    while len(surname) < 3:
+        surname = input("Inserisci il cognome: ").strip()
+    try:
+        table = read_shift_table(pdf_path)
+    except ValueError as e:
+        print(f"Errore: {e}")
         return
 
-    shifts = extract_shifts_for_person_hardcoded(tables, surname)
-    if not shifts:
-        print(f"\nNessun turno trovato per {surname}")
-        return
+    shifts, warnings = extract_shifts_for_person(table, surname)
+    for w in warnings:
+        print(f"ATTENZIONE: {w}")
 
     shifts_sorted = sort_days(shifts)
     print_shifts(shifts_sorted)

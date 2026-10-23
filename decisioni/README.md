@@ -7,5 +7,6 @@ Modello in `0000-modello.md`. Le regole stanno in `../CONVENZIONI.md`.
 
 | N | Titolo | Stato | Unità |
 |---|---|---|---|
-| 0001 | Significato delle righe scritto a mano, per indice di riga | decisa | trasversale |
-| 0002 | Niente struttura di riserva nel codice: structure.json è l'unica fonte | decisa | trasversale |
+| 0001 | Significato delle righe scritto a mano, per indice di riga | superata da 0003 | trasversale |
+| 0002 | Niente struttura di riserva nel codice: structure.json è l'unica fonte | superata da 0003 | trasversale |
+| 0003 | Luogo e orario letti dai bordi del PDF, senza structure.json | decisa | trasversale |

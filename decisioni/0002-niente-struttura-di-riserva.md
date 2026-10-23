@@ -1,6 +1,6 @@
 # 0002 — Niente struttura di riserva nel codice: structure.json è l'unica fonte
 
-Stato: decisa il 2026-10-23
+Stato: superata da 0003 (decisa il 2026-10-23)
 Unità: trasversale
 
 ## Contesto

@@ -1,17 +1,14 @@
 import streamlit as st
 import requests
 from main import (
-    parse_pdf,
-    extract_shifts_for_person_hardcoded,
+    read_shift_table,
+    extract_shifts_for_person,
     write_shifts_to_pdf,
     sort_days,
     has_giardini_castello,
     format_day_for_display,
     normalize_day_name,
-    get_hardcoded_structure,
-    structure_to_json_bytes,
-    structure_from_json_bytes,
-    get_raw_pdf_rows,
+    table_debug_rows,
 )
 import tempfile
 import os
@@ -322,36 +319,13 @@ def init_session_state():
         'surname': None,
         'generated_pdf_bytes': None,
         'need_regenerate': True,
-        'structure': None,
+        'table': None,
+        'warnings': [],
         'last_processed_key': None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-
-
-def get_structure():
-    if st.session_state.structure is None:
-        st.session_state.structure = get_hardcoded_structure()
-    return st.session_state.structure
-
-
-def structure_to_df(structure: dict) -> pd.DataFrame:
-    rows = sorted(structure.items())
-    return pd.DataFrame(
-        [{"Indice": k, "Luogo": v[0], "Orario": v[1]} for k, v in rows],
-        columns=["Indice", "Luogo", "Orario"]
-    )
-
-
-def df_to_structure(df: pd.DataFrame) -> dict:
-    result = {}
-    for _, row in df.iterrows():
-        try:
-            idx = int(row["Indice"])
-            result[idx] = (str(row["Luogo"]), str(row["Orario"]), "")
-        except: pass
-    return result
 
 
 def shifts_to_df(shifts):
@@ -450,25 +424,25 @@ with st.sidebar:
                     tmp.write(pdf_data)
                     tmp_path = tmp.name
                 
-                st.session_state.temp_pdf_path = tmp_path
-                tables = parse_pdf(tmp_path)
-                if tables:
-                    extracted = extract_shifts_for_person_hardcoded(
-                        tables, surname_input, structure=get_structure()
-                    )
-                    if extracted:
-                        st.session_state.shifts = sort_days(extracted)
-                        st.session_state.pdf_processed = True
-                        st.session_state.output_filename = get_output_filename(file_name_display, surname_input)
-                        st.session_state.input_pdf_bytes = pdf_data
-                        st.session_state.surname = surname_input
-                        st.session_state.need_regenerate = True
-                        st.session_state.last_processed_key = current_proc_key
-                        st.toast(f"Trovati {len(extracted)} turni!", icon="✅")
-                    else:
-                        st.error(f"Nessun turno trovato per {surname_input}")
-                else:
-                    st.error("Errore nella lettura del PDF")
+                try:
+                    table = read_shift_table(tmp_path)
+                except ValueError as e:
+                    table = None
+                    st.error(str(e))
+                finally:
+                    os.remove(tmp_path)
+                if table:
+                    extracted, warnings = extract_shifts_for_person(table, surname_input)
+                    st.session_state.table = table
+                    st.session_state.warnings = warnings
+                    st.session_state.shifts = sort_days(extracted)
+                    st.session_state.pdf_processed = True
+                    st.session_state.output_filename = get_output_filename(file_name_display, surname_input)
+                    st.session_state.input_pdf_bytes = pdf_data
+                    st.session_state.surname = surname_input
+                    st.session_state.need_regenerate = True
+                    st.session_state.last_processed_key = current_proc_key
+                    st.toast(f"Trovati {len(extracted)} turni!", icon="✅")
 
     if st.session_state.pdf_processed:
         st.markdown("---")
@@ -493,10 +467,12 @@ if not st.session_state.pdf_processed:
         st.image("https://cdn-icons-png.flaticon.com/512/3394/3394866.png", width=200)
 
 else:
-    tab1, tab2, tab3 = st.tabs(["📄 PDF GENERATO", "✏️ MODIFICA TURNI", "⚙️ CONFIGURAZIONE"])
+    tab1, tab2, tab3 = st.tabs(["📄 PDF GENERATO", "✏️ MODIFICA TURNI", "🔍 LETTURA PDF"])
 
     # ── TAB 1: PDF GENERATO ──────────────────────────────────────────────────
     with tab1:
+        for w in st.session_state.warnings:
+            st.warning(w)
         if st.session_state.need_regenerate or st.session_state.generated_pdf_bytes is None:
             with st.spinner("Generazione file..."):
                 st.session_state.generated_pdf_bytes = generate_pdf_bytes(
@@ -565,99 +541,12 @@ else:
                 st.success("Modifiche salvate con successo!")
                 st.rerun()
 
-    # ── TAB 3: CONFIGURAZIONE ────────────────────────────────────────────────
+    # ── TAB 3: LETTURA PDF ───────────────────────────────────────────────────
     with tab3:
-        st.subheader("⚙️ Configurazione Tecnica")
-        
-        with st.expander("🔍 Strumenti Debug PDF", expanded=False):
-            st.write("Visualizza esattamente come il programma legge le righe del PDF per correggere la struttura.")
-            if hasattr(st.session_state, "temp_pdf_path") and os.path.exists(st.session_state.temp_pdf_path):
-                if st.button("Analizza Righe PDF"):
-                    st.session_state.raw_pdf_rows = get_raw_pdf_rows(st.session_state.temp_pdf_path)
-                
-                if hasattr(st.session_state, "raw_pdf_rows"):
-                    st.dataframe(st.session_state.raw_pdf_rows, use_container_width=True, height=300)
-            else:
-                st.warning("Carica un PDF per attivare il debug.")
-
-        st.markdown("---")
-        
-        # Structure Table
-        st.markdown("#### Mappatura Indici PDF")
-        st.caption("Definisce quale Luogo/Orario assegnare in base alla riga in cui viene trovato il cognome.")
-        
-        col_ed1, col_ed2 = st.columns([2, 1])
-        with col_ed1:
-            edited_struct_df = st.data_editor(
-                structure_to_df(get_structure()),
-                num_rows="dynamic",
-                use_container_width=True,
-                height=400,
-                column_config={
-                    "Indice": st.column_config.NumberColumn("Indice Riga", disabled=False),
-                    "Luogo": st.column_config.TextColumn("Luogo Predefinito"),
-                    "Orario": st.column_config.TextColumn("Orario Predefinito"),
-                }
-            )
-        
-        with col_ed2:
-            st.markdown("##### 🛠️ Azioni Rapide")
-            ins_idx = st.number_input("Indice di riferimento", min_value=0, value=0)
-            if st.button("➕ Inserisci riga qui", use_container_width=True):
-                curr = get_structure()
-                new_s = {}
-                for k, v in curr.items():
-                    if k >= ins_idx: new_s[k+1] = v
-                    else: new_s[k] = v
-                new_s[ins_idx] = ("Nuovo Luogo", "", "")
-                st.session_state.structure = new_s
-                st.rerun()
-                
-            if st.button("➖ Rimuovi riga qui", use_container_width=True):
-                curr = get_structure()
-                if ins_idx in curr:
-                    new_s = {}
-                    for k, v in curr.items():
-                        if k < ins_idx: new_s[k] = v
-                        elif k > ins_idx: new_s[k-1] = v
-                    st.session_state.structure = new_s
-                    st.rerun()
-
-            st.markdown("---")
-            if st.button("💾 APPLICA E SALVA", type="primary", use_container_width=True):
-                st.session_state.structure = df_to_structure(edited_struct_df)
-                try:
-                    with open("structure.json", "wb") as f:
-                        f.write(structure_to_json_bytes(st.session_state.structure))
-                    st.success("Struttura salvata localmente!")
-                except: st.error("Impossibile salvare il file.")
-                st.session_state.pdf_processed = False
-                st.rerun()
-                
-            if st.button("🔄 Ripristina Default", use_container_width=True):
-                st.session_state.structure = get_hardcoded_structure()
-                st.session_state.pdf_processed = False
-                st.rerun()
-
-        st.markdown("---")
-        st.markdown("#### 📂 Import/Export Struttura")
-        c1, c2 = st.columns(2)
-        with c1:
-            up_json = st.file_uploader("Carica structure.json", type="json")
-            if up_json:
-                st.session_state.structure = structure_from_json_bytes(up_json.read())
-                st.success("JSON caricato!")
-                st.rerun()
-        with c2:
-            st.write("") # Spacer
-            st.write("")
-            st.download_button(
-                "⬇️ Scarica JSON per GitHub",
-                data=structure_to_json_bytes(get_structure()),
-                file_name="structure.json",
-                mime="application/json",
-                use_container_width=True
-            )
+        st.subheader("🔍 Come è stato letto il PDF")
+        st.caption("Luogo e orario che il programma ha assegnato a ogni riga della tabella. "
+                   "Se un turno è sbagliato, qui si vede se è sbagliata la lettura; la correzione si fa in Modifica turni.")
+        st.dataframe(table_debug_rows(st.session_state.table), use_container_width=True, height=600, hide_index=True)
 
     # ── PDF Input Preview (Bottom) ───────────────────────────────────────────
     st.markdown("---")
