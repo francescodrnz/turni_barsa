@@ -405,10 +405,6 @@ def main():
     shifts_sorted = sort_days(shifts)
     print_shifts(shifts_sorted)
 
-    if input("\nSono necessarie modifiche ai turni? (s/n): ").strip().lower() in ['s', 'si', 'sì', 'y', 'yes']:
-        from main import modify_shifts  # CLI only
-        shifts_sorted = modify_shifts(shifts_sorted)
-
     write_shifts_to_pdf(shifts_sorted, pdf_path, surname)
     input("Premi Invio per uscire...")
 

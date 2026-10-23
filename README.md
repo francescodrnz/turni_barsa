@@ -94,18 +94,21 @@ originale.
 - Su Streamlit Cloud "Applica e salva" dura fino al prossimo riavvio dell'app.
   Fino ad allora "Ripristina default" rilegge la versione salvata, non quella
   del repo.
-- CLI: rispondere "s" a "Sono necessarie modifiche ai turni?" fa terminare lo
-  script con `ImportError`, perché `modify_shifts` non esiste più in `main.py`.
-  Le modifiche si fanno dall'app.
+- CLI: non permette di correggere i turni, solo di estrarli e generare il PDF.
+  Le correzioni si fanno dall'app.
 - Tab Modifica turni: le celle lasciate vuote in una riga aggiunta finiscono
   nel PDF come testo vuoto, le righe del tutto vuote si scartano al salvataggio.
 - I PDF dei turni (originali e generati) contengono nomi, malattie e permessi
-  dei colleghi: non vanno messi nel repo.
+  dei colleghi: non vanno messi nel repo. `.gitignore` esclude `*.pdf`; per le
+  prove in locale si tengono in `pdf_turni/`.
 
 ## Comandi utili
 ```bash
 # CLI interattiva (scrive il PDF nella cartella corrente)
 .venv/bin/python main.py
+
+# Turni di Crudele senza domande (debug no, nome file, cognome, Invio finale)
+cd pdf_turni && printf 'n\n<file>.pdf\nCrudele\n\n' | ../.venv/bin/python ../main.py
 
 # Righe del PDF con l'indice che gli assegna il parser
 .venv/bin/python -c "import main, sys; [print(r['Indice Struttura'], r['Contenuto'][:2]) for r in main.get_raw_pdf_rows(sys.argv[1])]" "file.pdf"
