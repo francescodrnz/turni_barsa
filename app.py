@@ -368,10 +368,16 @@ def shifts_to_df(shifts):
 
 
 def df_to_shifts(df):
+    # Le righe aggiunte nel data_editor hanno le celle vuote a None/NaN
+    def cell(value):
+        return "" if pd.isna(value) else str(value).strip()
+
     shifts = []
     for _, row in df.iterrows():
-        day_norm = normalize_day_name(row["Giorno"])
-        shifts.append((day_norm, str(row["Data"]), row["Luogo"], row["Orario"], row["Pulizia Bagni"]))
+        giorno, data, luogo, orario, pulizia = (cell(row[c]) for c in ["Giorno", "Data", "Luogo", "Orario", "Pulizia Bagni"])
+        if not any((giorno, data, luogo, orario, pulizia)):
+            continue
+        shifts.append((normalize_day_name(giorno), data, luogo, orario, pulizia))
     return shifts
 
 

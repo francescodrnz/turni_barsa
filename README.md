@@ -64,12 +64,13 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   è sbagliato su tutta la tabella, va corretta la struttura (tab
   Configurazione) e poi committata. Se è sbagliato un turno solo, basta la tab
   Modifica turni.
-- **In locale, solo parser**: servono `pdfplumber` e `fpdf` (il `.venv` del repo
-  ha queste). Si lancia `main.py` da una cartella che contiene il PDF: il
+- **In locale**: il `.venv` del repo è creato con `uv` e non ha `pip`; i
+  pacchetti si installano con `uv pip install -p .venv/bin/python -r
+  requirements.txt`. Per il solo parser bastano `pdfplumber` e `fpdf`. Si lancia `main.py` da una cartella che contiene il PDF: il
   programma propone i file che iniziano con "servizio custodia", chiede il
   cognome, stampa i turni e scrive il PDF nella cartella corrente.
-- **In locale, app**: `pip install -r requirements.txt`, più `poppler-utils`
-  di sistema (`packages.txt`, serve a `pdf2image`), poi `streamlit run app.py`.
+- **In locale, app**: oltre ai requisiti serve `poppler-utils` di sistema
+  (`packages.txt`, serve a `pdf2image`), poi `.venv/bin/streamlit run app.py`.
 
 Dopo una modifica al parser o a `structure.json`, si rigenerano i turni di
 Crudele Francesco sull'ultimo PDF e si confrontano a occhio con la tabella
@@ -96,6 +97,8 @@ originale.
 - CLI: rispondere "s" a "Sono necessarie modifiche ai turni?" fa terminare lo
   script con `ImportError`, perché `modify_shifts` non esiste più in `main.py`.
   Le modifiche si fanno dall'app.
+- Tab Modifica turni: le celle lasciate vuote in una riga aggiunta finiscono
+  nel PDF come testo vuoto, le righe del tutto vuote si scartano al salvataggio.
 - I PDF dei turni (originali e generati) contengono nomi, malattie e permessi
   dei colleghi: non vanno messi nel repo.
 
@@ -111,7 +114,7 @@ originale.
 .venv/bin/python -c "import main; print(len(main.get_hardcoded_structure()), 'indici')"
 
 # App in locale
-pip install -r requirements.txt && streamlit run app.py
+uv pip install -p .venv/bin/python -r requirements.txt && .venv/bin/streamlit run app.py
 ```
 
 ## Decisioni collegate

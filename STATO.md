@@ -10,7 +10,9 @@ codice non c'è più una struttura di riserva.
 
 `structure.json` è allineata al layout della sett. 44 (26/10–01/11/2026),
 orari compresi. Il parser accetta i giorni sia con l'accento sia con
-l'apostrofo. `README.md` descrive parser, app e flusso delle correzioni.
+l'apostrofo. Nella tab Modifica turni si possono aggiungere righe con celle
+vuote senza che la rigenerazione del PDF vada in errore. Il `.venv` locale
+(creato con `uv`) ha tutti i requisiti installati.
 
-Prossimo passo: le due verifiche in TODO.md (turni sulla sett. 44, app in
-locale), poi il bug della CLI.
+Prossimo passo: le verifiche in TODO.md (prova su Streamlit Cloud della tab
+Modifica turni, turni sulla sett. 44, app in locale), poi il bug della CLI.
