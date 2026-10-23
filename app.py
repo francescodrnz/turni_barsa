@@ -18,7 +18,7 @@ import base64
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageDraw
 import io
-import fitz  # PyMuPDF
+import pymupdf
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -248,9 +248,9 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
             s = re.sub(r"[^\wÀ-ÖØ-öø-ÿ]+", "", s, flags=re.UNICODE)
             return s.lower()
 
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
         dpi = 150 if use_zoom else 200 
-        mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
+        mat = pymupdf.Matrix(dpi / 72.0, dpi / 72.0)
         
         target_tokens = []
         if highlight_text:
@@ -278,13 +278,13 @@ def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highl
                         y0 = min(words[idx + k][1] for k in range(m))
                         x1 = max(words[idx + k][2] for k in range(m))
                         y1 = max(words[idx + k][3] for k in range(m))
-                        rect = fitz.Rect(x0, y0, x1, y1) * mat
+                        rect = pymupdf.Rect(x0, y0, x1, y1) * mat
                         draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 150))
 
                 if not found_any:
                     for w in words:
                         if normalize_token(w[4]) == first_token:
-                            rect = fitz.Rect(w[0], w[1], w[2], w[3]) * mat
+                            rect = pymupdf.Rect(w[0], w[1], w[2], w[3]) * mat
                             draw.rectangle([rect.x0, rect.y0, rect.x1, rect.y1], fill=(255, 230, 0, 150))
                 
                 img = Image.alpha_composite(img.convert("RGBA"), overlay)

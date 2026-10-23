@@ -15,7 +15,8 @@ tab Configurazione è diventata "Lettura PDF" (vista di controllo riga per
 riga). Gli avvisi compaiono in cima al PDF generato. Provato anche su Streamlit
 Cloud con la sett. 44: tre tab, avvisi e download funzionano.
 
-`app.py` non usa più `use_container_width` (deprecato in Streamlit), e il logo
-Barsa punta al nuovo indirizzo sul sito.
+`app.py` non usa più API deprecate (`use_container_width` di Streamlit,
+`import fitz` di PyMuPDF): l'avvio è senza avvisi. Il logo Barsa punta al
+nuovo indirizzo sul sito.
 
-Prossimo passo: togliere l'avviso di deprecazione di `import fitz`.
+Nessun lavoro aperto in TODO.md.
