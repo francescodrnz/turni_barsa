@@ -17,6 +17,9 @@ accanto alla tabella (decisione 0004).
 
 Il nome del PDF generato non dipende più dal nome del file in input: viene dai
 giorni della tabella e dalla data di creazione del PDF (decisione 0005).
-Verificato su `pdf_turni/`, con la sett. 46 da link Adobe e con lo script. L'app
-è stata provata in automatico col link Adobe, senza browser: il caricamento da
-file e il download restano da provare (TODO.md).
+Verificato su `pdf_turni/`, con la sett. 46 da link Adobe e con lo script.
+
+Provati a mano su Streamlit Cloud: caricamento da file, nome del file scaricato
+(anche a cavallo di due mesi) e colonna Pulizia bagni.
+
+Nessun lavoro aperto in TODO.md.
