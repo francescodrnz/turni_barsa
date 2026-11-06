@@ -93,8 +93,7 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   programma propone tutti i PDF della cartella tranne quelli che iniziano con
   "Turni ", chiede il cognome, stampa avvisi e turni e scrive il PDF nella
   cartella corrente.
-- **In locale, app**: oltre ai requisiti serve `poppler-utils` di sistema
-  (`packages.txt`, serve a `pdf2image`), poi `.venv/bin/streamlit run app.py`.
+- **In locale, app**: dopo i requisiti, `.venv/bin/streamlit run app.py`.
 
 Dopo una modifica al parser si rigenerano i turni di Crudele Francesco
 sull'ultimo PDF, si confrontano a occhio con la tabella originale e si lancia
@@ -141,6 +140,10 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
 - Titolo della pagina, titolo nei metadati e nome del file sono scritti a mano e
   possono sbagliare (sett. 45: "DAL 02/10/2026" invece di novembre; sett. 46:
   metadati "sett 45"). Per il periodo non si usano.
+- **Streamlit Cloud dopo un push**: se `app.py` importa qualcosa di nuovo da
+  `main.py`, l'app può dare `ImportError` perché il processo tiene il vecchio
+  modulo in memoria. Rimedio: Manage app → ⋮ → Reboot app. Il riavvio reinstalla
+  le dipendenze e richiede qualche minuto.
 - I nomi dei luoghi sono quelli scritti nel PDF, maiuscole comprese ("Permessi
   vari").
 - Il cognome si cerca come sottostringa: "Rossi" trova anche "Rossini".

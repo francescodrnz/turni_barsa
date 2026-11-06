@@ -16,7 +16,6 @@ import os
 import re
 import pandas as pd
 import base64
-from pdf2image import convert_from_bytes
 from PIL import Image, ImageDraw
 import io
 import pymupdf
