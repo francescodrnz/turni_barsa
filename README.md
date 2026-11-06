@@ -53,14 +53,20 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   colonne di pdfplumber: per trovare una cella si usano solo i bordi sinistro
   e superiore (`col.bbox[0]`, `row.bbox[1]`).
 - `write_shifts_to_pdf` genera il PDF con fpdf. Se fra i turni c'è Giardini del
-  Castello, aggiunge la colonna "Pulizia bagni" ("No" dove il valore manca). Il
-  nome del file è `Turni <cognome> dal … .pdf`, preso dal nome del PDF di
-  partenza.
+  Castello, aggiunge la colonna "Pulizia bagni" ("No" dove il valore manca).
+- `output_filename` dà il nome del file, `Turni <cognome> dal 09 al 15
+  novembre.pdf`, senza guardare il nome del PDF di partenza. Giorni e numeri
+  vengono dall'intestazione della tabella; mese e anno dalla data più vicina
+  alla data di creazione del PDF (`creato` in `read_shift_table`; se manca, la
+  data di oggi), entro 14 giorni, con quel numero e quel giorno della settimana.
+  Se non c'è, o se i giorni non seguono il calendario, restano i soli numeri:
+  `Turni <cognome> dal 09 al 15.pdf`.
 
 **App (`app.py`)**
 - Barra laterale: si carica il PDF da file o da link Adobe Acrobat. Il link
   viene risolto da `download_adobe_pdf`, che legge il JSON `dc_data` della
-  pagina e recupera anche il nome originale del file. Poi si sceglie il cognome
+  pagina e recupera anche il nome originale del file, usato solo per la
+  didascalia. Poi si sceglie il cognome
   (default "Crudele Francesco") e si preme Genera turni. Il PDF viene scritto
   in un file temporaneo solo per la lettura, poi cancellato. Gli errori di
   lettura compaiono come `st.error`.
@@ -84,8 +90,9 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
 - **In locale**: il `.venv` del repo è creato con `uv` e non ha `pip`; i
   pacchetti si installano con `uv pip install -p .venv/bin/python -r
   requirements.txt`. Per il solo parser bastano `pdfplumber` e `fpdf`. Si lancia `main.py` da una cartella che contiene il PDF: il
-  programma propone i file che iniziano con "servizio custodia", chiede il
-  cognome, stampa avvisi e turni e scrive il PDF nella cartella corrente.
+  programma propone tutti i PDF della cartella tranne quelli che iniziano con
+  "Turni ", chiede il cognome, stampa avvisi e turni e scrive il PDF nella
+  cartella corrente.
 - **In locale, app**: oltre ai requisiti serve `poppler-utils` di sistema
   (`packages.txt`, serve a `pdf2image`), poi `.venv/bin/streamlit run app.py`.
 
@@ -104,6 +111,10 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
   "Mattina"; 11 PDF con la sola regola delle 19:00, 7 "19:00" ciascuno;
   gennaio e febbraio 7 + 7; nessun valore sui PDF senza legenda. Un solo
   avviso (29 dic, giovedì 01).
+- 2026-11-06, nome del file: su 17 PDF di `pdf_turni/` con il periodo nel nome,
+  17 uguali. Sett. 44, sett. 45 e sett. 46 (da link Adobe) danno la settimana
+  giusta. I PDF sono creati 3-5 giorni prima del lunedì; spostando il
+  riferimento di ±14 giorni il risultato non cambia.
 
 ## Limiti e comportamenti noti
 - **Dipende dai bordi di Excel**: se l'azienda cambia lo stile dei bordi in
@@ -124,6 +135,12 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
   Rimedio: aggiungere la parola alle chiavi in `_legend`. Una barretta con
   sfumatura molto diversa dalle celle (29 dic, viola) dà lo stesso avviso: si
   corregge a mano nella tab Modifica turni.
+- **Nome del file senza mese**: succede con un PDF senza data di creazione
+  elaborato a più di 14 giorni dalla sua settimana, o con giorni che non seguono
+  il calendario. I turni non cambiano, si rinomina il file a mano.
+- Titolo della pagina, titolo nei metadati e nome del file sono scritti a mano e
+  possono sbagliare (sett. 45: "DAL 02/10/2026" invece di novembre; sett. 46:
+  metadati "sett 45"). Per il periodo non si usano.
 - I nomi dei luoghi sono quelli scritti nel PDF, maiuscole comprese ("Permessi
   vari").
 - Il cognome si cerca come sottostringa: "Rossi" trova anche "Rossini".
@@ -141,10 +158,16 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
 # CLI interattiva (scrive il PDF nella cartella corrente)
 .venv/bin/python main.py
 
-# Turni di Crudele senza domande (debug no, nome file, cognome, Invio finale).
-# Da una cartella che contiene solo quel PDF: se ci sono file "servizio
-# custodia…" la CLI chiede prima quale scegliere.
-printf 'n\n<file>.pdf\nCrudele\n\n' | /percorso/repo/.venv/bin/python /percorso/repo/main.py
+# Turni di Crudele senza domande (debug no, conferma del file, cognome, Invio finale).
+# Da una cartella con un solo PDF da leggere: con più PDF la CLI chiede quale scegliere.
+printf 'n\ns\nCrudele\n\n' | /percorso/repo/.venv/bin/python /percorso/repo/main.py
+
+# Nome del file generato per ogni PDF di pdf_turni/
+.venv/bin/python -c "
+import main, glob
+for p in sorted(glob.glob('pdf_turni/*.pdf')):
+    try: print(p, '->', main.output_filename(main.read_shift_table(p), 'Crudele'))
+    except ValueError as e: print('ERRORE', p, e)"
 
 # Righe del PDF con luogo e orario assegnati
 .venv/bin/python -c "import main, sys; [print(r) for r in main.table_debug_rows(main.read_shift_table(sys.argv[1]))]" "file.pdf"
@@ -172,6 +195,8 @@ uv pip install -p .venv/bin/python -r requirements.txt && .venv/bin/streamlit ru
 ```
 
 ## Decisioni collegate
+- [0005](decisioni/0005-nome-file-dal-contenuto-del-pdf.md) — Nome del PDF
+  generato dai giorni della tabella e dalla data di creazione del PDF.
 - [0004](decisioni/0004-pulizia-bagni-dalla-legenda.md) — Pulizia bagni dal
   colore delle celle, con il significato letto dalla legenda.
 - [0003](decisioni/0003-luoghi-dai-bordi-del-pdf.md) — Luogo e orario letti dai

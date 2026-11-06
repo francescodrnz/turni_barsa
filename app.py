@@ -9,6 +9,7 @@ from main import (
     format_day_for_display,
     normalize_day_name,
     table_debug_rows,
+    output_filename,
 )
 import tempfile
 import os
@@ -211,11 +212,6 @@ def download_adobe_pdf(adobe_url):
         
     return None, None
 
-def get_output_filename(input_filename, surname):
-    match = re.search(r"DAL.*\.pdf", input_filename, re.IGNORECASE)
-    return f"Turni {surname} " + match.group(0).lower() if match else f"Turni {surname}.pdf"
-
-
 def display_pdf(pdf_bytes, title=None, filename=None, show_download=False, highlight_text=None, use_zoom=False):
     if show_download and filename:
         c1, c2, c3 = st.columns([1, 1, 1])
@@ -355,8 +351,8 @@ def df_to_shifts(df):
     return shifts
 
 
-def generate_pdf_bytes(shifts, output_filename, surname):
-    output_name = write_shifts_to_pdf(shifts, output_filename, surname)
+def generate_pdf_bytes(shifts, out_path, surname):
+    output_name = write_shifts_to_pdf(shifts, out_path, surname)
     with open(output_name, "rb") as f:
         pdf_bytes = f.read()
     if os.path.exists(output_name):
@@ -437,7 +433,7 @@ with st.sidebar:
                     st.session_state.warnings = warnings
                     st.session_state.shifts = sort_days(extracted)
                     st.session_state.pdf_processed = True
-                    st.session_state.output_filename = get_output_filename(file_name_display, surname_input)
+                    st.session_state.output_filename = output_filename(table, surname_input)
                     st.session_state.input_pdf_bytes = pdf_data
                     st.session_state.surname = surname_input
                     st.session_state.need_regenerate = True

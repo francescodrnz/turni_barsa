@@ -2,7 +2,7 @@ import pdfplumber
 import os
 import re
 import glob
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from fpdf import FPDF
 import sys
 
@@ -26,6 +26,8 @@ def format_day_for_display(day_name):
     return day_name
 
 DAY_NAMES = ['lunedì', 'martedì', "mercoledi'", 'giovedì', 'venerdì', 'sabato', 'domenica']
+MONTH_NAMES = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio',
+               'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre']
 DAY_HEADER = re.compile(r"([a-zàèéìòù'’]+)\s+(\d+)", re.IGNORECASE)
 TIME_RANGE = re.compile(r"(\d{1,2})[:,.]+(\d{2})\s*[-/]?\s*(\d{1,2})[:,.]+(\d{2})")
 
@@ -189,6 +191,7 @@ def read_shift_table(file_path):
     except Exception as e:
         raise ValueError(f"Impossibile leggere il PDF: {e}") from e
     with pdf:
+        created = _creation_date(pdf.metadata)
         if not any(page.chars for page in pdf.pages):
             raise ValueError("Il PDF è una scansione senza testo: non si può leggere.")
 
@@ -245,7 +248,54 @@ def read_shift_table(file_path):
     if len({r["luogo"] for r in rows if r["luogo"]}) < MIN_LOCATIONS:
         raise ValueError("Struttura del PDF non riconosciuta (bordi diversi dal solito?): "
                          "controlla la tabella a mano.")
-    return {"days": days, "rows": rows, "legenda": legend}
+    return {"days": days, "rows": rows, "legenda": legend, "creato": created}
+
+
+def _creation_date(metadata):
+    """Data di creazione dai metadati del PDF ('D:AAAAMMGG…'); None se manca o non è valida."""
+    match = re.match(r"D:(\d{4})(\d{2})(\d{2})", str((metadata or {}).get('CreationDate') or ''))
+    if not match:
+        return None
+    try:
+        return date(int(match[1]), int(match[2]), int(match[3]))
+    except ValueError:
+        return None
+
+
+def _first_day_date(days, reference):
+    """
+    Data del primo giorno dell'intestazione: la più vicina al riferimento, entro 14
+    giorni, con quel numero e quel giorno della settimana. None se non c'è o se gli
+    altri giorni dell'intestazione non seguono il calendario.
+    """
+    name, number = days[0]
+    matches = [reference + timedelta(offset) for offset in range(-14, 15)]
+    matches = [d for d in matches if d.day == int(number) and d.weekday() == DAY_NAMES.index(name)]
+    if not matches:
+        return None
+    start = min(matches, key=lambda d: abs((d - reference).days))
+    for i, (name, number) in enumerate(days):
+        current = start + timedelta(i)
+        if current.day != int(number) or current.weekday() != DAY_NAMES.index(name):
+            return None
+    return start
+
+
+def output_filename(table, surname, today=None):
+    """
+    Nome del PDF generato, ricavato dal contenuto: il nome del file in input cambia
+    ogni settimana. L'intestazione dà giorni e numeri, la data di creazione del PDF
+    (o la data di oggi) dà mese e anno. Senza una data certa restano i soli numeri.
+    """
+    surname = re.sub(r'[\\/:*?"<>|]+', ' ', surname).strip()  # niente percorsi o caratteri vietati
+    days = [table["days"][col] for col in sorted(table["days"])]
+    reference = table.get("creato") or today or date.today()
+    start = _first_day_date(days, reference)
+    if start is None:
+        return f"Turni {surname} dal {int(days[0][1]):02d} al {int(days[-1][1]):02d}.pdf"
+    end = start + timedelta(len(days) - 1)
+    start_month = "" if start.month == end.month else f" {MONTH_NAMES[start.month - 1]}"
+    return f"Turni {surname} dal {start.day:02d}{start_month} al {end.day:02d} {MONTH_NAMES[end.month - 1]}.pdf"
 
 
 def table_debug_rows(table):
@@ -353,11 +403,8 @@ def sort_days(shifts):
 
     return sorted(shifts, key=lambda s: (get_day_number(s), get_time(s)))
 
-def write_shifts_to_pdf(shifts, input_filename, surname):
+def write_shifts_to_pdf(shifts, out_path, surname):
     shifts = sort_days(shifts)
-
-    match = re.search(r"DAL.*\.pdf", input_filename, re.IGNORECASE)
-    output_filename = f"Turni {surname} " + match.group(0).lower() if match else f"Turni {surname}.pdf"
 
     has_bagni = has_giardini_castello(shifts)
 
@@ -428,9 +475,9 @@ def write_shifts_to_pdf(shifts, input_filename, surname):
             pdf.cell(60, 10, time, border=1, align='C')
         pdf.ln()
 
-    pdf.output(output_filename)
-    print(f"File '{output_filename}' creato con successo!")
-    return output_filename
+    pdf.output(out_path)
+    print(f"File '{out_path}' creato con successo!")
+    return out_path
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -456,7 +503,7 @@ def print_shifts(shifts):
 def find_pdf_file():
     pdf_files = []
     for file in glob.glob(os.path.join(os.getcwd(), "*")):
-        if file.lower().endswith('.pdf') and os.path.basename(file).lower().startswith('servizio custodia'):
+        if file.lower().endswith('.pdf') and not os.path.basename(file).lower().startswith('turni '):
             pdf_files.append(file)
     return pdf_files
 
@@ -505,7 +552,7 @@ def main():
     shifts_sorted = sort_days(shifts)
     print_shifts(shifts_sorted)
 
-    write_shifts_to_pdf(shifts_sorted, pdf_path, surname)
+    write_shifts_to_pdf(shifts_sorted, output_filename(table, surname), surname)
     input("Premi Invio per uscire...")
 
 if __name__ == "__main__":
