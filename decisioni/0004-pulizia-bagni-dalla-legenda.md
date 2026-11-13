@@ -1,6 +1,6 @@
 # 0004 — Pulizia bagni dal colore delle celle, con il significato letto dalla legenda
 
-Stato: decisa il 2026-10-23
+Stato: superata da 0006 (decisa il 2026-10-23)
 Unità: trasversale
 
 ## Contesto

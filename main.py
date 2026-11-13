@@ -133,46 +133,73 @@ def _fill_at(page, x, y):
     return color
 
 
+LEGEND_KEYS = ("MATTIN", "12:00", "12,00", "19:00", "19,00", "RIPASSO")
+
+
+def _paragraph_next_to(words, r, above):
+    """
+    Testo del paragrafo subito sopra (o sotto) il rettangolo r: prima riga entro
+    40 punti, poi righe a non più di 5 punti l'una dall'altra (oltre è un'altra regola).
+    """
+    if above:
+        near = sorted((w for w in words if w['bottom'] <= r['top'] + 1), key=lambda w: -w['bottom'])
+    else:
+        near = sorted((w for w in words if w['top'] >= r['bottom'] - 1), key=lambda w: w['top'])
+    text, edge, gap = [], r['top'] if above else r['bottom'], 40
+    for w in near:
+        if w['x1'] <= r['x0'] or w['x0'] >= r['x1']:
+            continue
+        if (w['bottom'] < edge - gap) if above else (w['top'] > edge + gap):
+            break
+        text.append(w['text'])
+        edge = min(edge, w['top']) if above else max(edge, w['bottom'])
+        gap = 5
+    return ' '.join(text).upper()
+
+
 def _legend(page, right):
     """
     Legenda della pulizia bagni, a destra della tabella: barrette colorate vuote
-    sotto un testo di regola ("...ripasso alle ore 19:00", "pulizia del mattino",
-    "1° passaggio ore 12:00"). Ritorna {colore: "19:00" | "Mattina"}. I rettangoli
-    colorati con del testo dentro sono evidenziazioni, non barrette.
+    sopra o sotto un testo di regola ("...ripasso alle ore 19:00", "pulizia del
+    mattino", "1° passaggio ore 12:00"). Ritorna la lista dei colori che indicano
+    la pulizia; il significato lo dà l'orario del turno (_cleaning_from_time),
+    perché la posizione delle barrette rispetto al testo cambia di settimana in
+    settimana. I rettangoli colorati con del testo dentro sono evidenziazioni,
+    non barrette.
     """
     words = [w for w in page.extract_words() if w['x0'] > right]
-    legend = {}
+    legend = []
     for r in page.rects:
         color = _color(r)
         if not r.get('fill') or color is None or _is_dark(color) or r['x0'] <= right \
-                or r['width'] <= 20 or r['height'] <= 4:
+                or r['width'] <= 20 or r['height'] <= 4 or color in legend:
             continue
         if any(r['x0'] <= (c['x0'] + c['x1']) / 2 <= r['x1'] and r['top'] <= (c['top'] + c['bottom']) / 2 <= r['bottom']
                for c in page.chars):
             continue
-        # Solo il paragrafo subito sopra la barretta: le righe distanti più di 5 punti sono un'altra regola.
-        text, edge, gap = [], r['top'], 40
-        for w in sorted((w for w in words if w['bottom'] <= r['top'] + 1 and w['x1'] > r['x0'] and w['x0'] < r['x1']),
-                        key=lambda w: -w['bottom']):
-            if w['bottom'] < edge - gap:
-                break
-            text.append(w['text'])
-            edge, gap = min(edge, w['top']), 5
-        text = ' '.join(text).upper()
-        meanings = {m for m, keys in (("Mattina", ("MATTIN", "12:00", "12,00")), ("19:00", ("19:00", "19,00", "RIPASSO")))
-                    if any(k in text for k in keys)}
-        if len(meanings) == 1:
-            legend[color] = meanings.pop()
+        if any(k in _paragraph_next_to(words, r, above) for above in (True, False) for k in LEGEND_KEYS):
+            legend.append(color)
     return legend
 
 
-def _legend_meaning(color, legend):
-    """Significato di un colore di cella: anche la stessa tinta in una sfumatura vicina (Excel a volte le cambia)."""
-    if color in legend:
-        return legend[color]
-    near = min(legend, key=lambda l: max(abs(a - b) for a, b in zip(l, color)), default=None)
-    if near and max(abs(a - b) for a, b in zip(near, color)) <= 0.1:
-        return legend[near]
+def _is_legend_color(color, legend):
+    """Vero se il colore è in legenda, anche in una sfumatura vicina (Excel a volte le cambia)."""
+    return any(max(abs(a - b) for a, b in zip(l, color)) <= 0.1 for l in legend)
+
+
+def _cleaning_from_time(time_range):
+    """
+    Pulizia bagni dall'orario del turno: "19:00" se il turno comprende le 19:00,
+    "Mattina" se comincia prima di mezzogiorno, None altrimenti.
+    """
+    match = re.fullmatch(r"(\d{2}):(\d{2})-(\d{2}):(\d{2})", time_range or '')
+    if not match:
+        return None
+    start, end = int(match[1]) * 60 + int(match[2]), int(match[3]) * 60 + int(match[4])
+    if start <= 19 * 60 <= end:
+        return "19:00"
+    if start < 12 * 60:
+        return "Mattina"
     return None
 
 
@@ -319,10 +346,11 @@ def extract_shifts_for_person(table, surname):
     Ritorna (turni, avvisi): gli avvisi segnalano righe col cognome senza luogo
     o senza orario, da controllare a mano.
     A Giardini del Castello, se il PDF ha la legenda, la pulizia bagni viene dal
-    colore della cella ("19:00", "Mattina" o "No").
+    colore della cella: "No" se è bianca; se il colore è in legenda, "19:00" o
+    "Mattina" secondo l'orario del turno.
     """
     days = table["days"]
-    legend = table.get("legenda", {})
+    legend = table.get("legenda", [])
     shifts = []
     warnings = []
     days_with_shifts = set()
@@ -360,8 +388,12 @@ def extract_shifts_for_person(table, surname):
                     color = row["colori"].get(col_idx)
                     if color is None:
                         pulizia = "No"
-                    elif _legend_meaning(color, legend):
-                        pulizia = _legend_meaning(color, legend)
+                    elif _is_legend_color(color, legend):
+                        pulizia = _cleaning_from_time(final_time) or ""
+                        if not pulizia:
+                            warnings.append(f"{format_day_for_display(day_name)} {day_number}: cella colorata a "
+                                            f"{location} su un turno né di mattina né delle 19:00, "
+                                            f"controlla la pulizia bagni.")
                     else:
                         warnings.append(f"{format_day_for_display(day_name)} {day_number}: cella colorata a "
                                         f"{location} con un colore che non è in legenda, controlla la pulizia bagni.")

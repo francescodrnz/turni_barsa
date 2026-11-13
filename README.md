@@ -39,16 +39,19 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   (`STATUS_LOCATIONS`: Riposo, Ferie, Malattia, Assente, Permessi, Infortunio,
   Non lavora) non hanno orario. I giorni dove il cognome non compare diventano
   "Riposo".
-- **Pulizia bagni** (decisione 0004): `_legend` legge la legenda a destra
-  della tabella. Ogni barretta colorata vuota prende il significato dal
-  paragrafo subito sopra ("19:00"/"ripasso" → `19:00`, "mattino"/"12:00" →
-  `Mattina`); i rettangoli con testo dentro sono evidenziazioni e si saltano.
+- **Pulizia bagni** (decisione 0006): `_legend` legge la legenda a destra
+  della tabella e ritorna la lista dei colori di pulizia: ogni barretta
+  colorata vuota con subito sopra o sotto (`_paragraph_next_to`) un paragrafo
+  con una parola di `LEGEND_KEYS` ("19:00", "ripasso", "mattino", "12:00"). I
+  rettangoli con testo dentro sono evidenziazioni e si saltano.
   `read_shift_table` salva il colore di ogni cella dei giorni (`colori`, con
   `_fill_at`) e la legenda (`legenda`). A Giardini del Castello,
-  `extract_shifts_for_person` mette nel quinto campo il significato del
-  colore (`_legend_meaning`, tollera sfumature fino a 0,1), "No" per una cella
-  bianca, un avviso per un colore che non è in legenda. Senza legenda il campo
-  resta vuoto.
+  `extract_shifts_for_person` mette nel quinto campo: "No" per una cella
+  bianca; per un colore di legenda (`_is_legend_color`, tollera sfumature fino
+  a 0,1) il valore dato dall'orario del turno (`_cleaning_from_time`: `19:00`
+  se il turno comprende le 19:00, altrimenti `Mattina` se comincia prima di
+  mezzogiorno); un avviso per un colore che non è in legenda o per un turno
+  né di mattina né delle 19. Senza legenda il campo resta vuoto.
 - Le celle unite allargano verso destra e verso il basso i bbox di righe e
   colonne di pdfplumber: per trovare una cella si usano solo i bordi sinistro
   e superiore (`col.bbox[0]`, `row.bbox[1]`).
@@ -110,6 +113,9 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
   "Mattina"; 11 PDF con la sola regola delle 19:00, 7 "19:00" ciascuno;
   gennaio e febbraio 7 + 7; nessun valore sui PDF senza legenda. Un solo
   avviso (29 dic, giovedì 01).
+- 2026-11-13, pulizia bagni dall'orario (0006) su `pdf_turni/`: sett. 47 4
+  "Mattina" e 7 "19:00", dal 02 al 08 7 + 7; tutti gli altri PDF con valori e
+  avvisi identici al metodo della 0004.
 - 2026-11-06, nome del file: su 17 PDF di `pdf_turni/` con il periodo nel nome,
   17 uguali. Sett. 44, sett. 45 e sett. 46 (da link Adobe) danno la settimana
   giusta. I PDF sono creati 3-5 giorni prima del lunedì; spostando il
@@ -128,12 +134,16 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
   parola a `QUALIFIER_WORDS` in `main.py`.
 - **Stati nuovi** (es. "Congedo"): finiscono come luogo con l'avviso "orario
   non trovato". Rimedio: aggiungerli a `STATUS_LOCATIONS`.
-- **Pulizia bagni**: dipende dalla legenda. Una regola scritta con parole
-  nuove (senza "19:00", "ripasso", "mattino", "12:00") non viene riconosciuta e
-  le celle di quel colore danno l'avviso "colore che non è in legenda".
-  Rimedio: aggiungere la parola alle chiavi in `_legend`. Una barretta con
-  sfumatura molto diversa dalle celle (29 dic, viola) dà lo stesso avviso: si
-  corregge a mano nella tab Modifica turni.
+- **Pulizia bagni**: la legenda dice solo quali colori contano, il valore
+  viene dall'orario. Una regola scritta con parole nuove (senza "19:00",
+  "ripasso", "mattino", "12:00") non viene riconosciuta e le celle di quel
+  colore danno l'avviso "colore che non è in legenda". Rimedio: aggiungere la
+  parola a `LEGEND_KEYS`. Una barretta con sfumatura molto diversa dalle celle
+  (29 dic, viola) dà lo stesso avviso. Altre evidenziazioni nelle righe di
+  Giardini del Castello (il verde delle sett. 47 e 02-08) danno lo stesso
+  avviso. Un colore di legenda su un turno che comincia dopo mezzogiorno e
+  finisce prima delle 19 dà l'avviso "né di mattina né delle 19:00". Tutti
+  questi casi si correggono a mano nella tab Modifica turni.
 - **Nome del file senza mese**: succede con un PDF senza data di creazione
   elaborato a più di 14 giorni dalla sua settimana, o con giorni che non seguono
   il calendario. I turni non cambiano, si rinomina il file a mano.
@@ -185,7 +195,7 @@ for p in sorted(glob.glob('pdf_turni/*.pdf')):
            and (not r['luogo'] or not (r['orario'] or main.is_status_location(r['luogo'])))]
     print('ok' if not bad else 'DA GUARDARE', p, bad)"
 
-# Legenda e celle colorate di Giardini del Castello (colore → significato)
+# Colori in legenda e celle colorate di Giardini del Castello (orario, giorno: nome e colore)
 .venv/bin/python -c "
 import main, sys
 t = main.read_shift_table(sys.argv[1]); print(t['legenda'])
@@ -198,10 +208,13 @@ uv pip install -p .venv/bin/python -r requirements.txt && .venv/bin/streamlit ru
 ```
 
 ## Decisioni collegate
+- [0006](decisioni/0006-pulizia-bagni-dall-orario.md) — Pulizia bagni: la
+  legenda dice quali colori, l'orario del turno dice quale pulizia.
 - [0005](decisioni/0005-nome-file-dal-contenuto-del-pdf.md) — Nome del PDF
   generato dai giorni della tabella e dalla data di creazione del PDF.
 - [0004](decisioni/0004-pulizia-bagni-dalla-legenda.md) — Pulizia bagni dal
-  colore delle celle, con il significato letto dalla legenda.
+  colore delle celle, con il significato letto dalla legenda; superata dalla
+  0006.
 - [0003](decisioni/0003-luoghi-dai-bordi-del-pdf.md) — Luogo e orario letti dai
   bordi del PDF, senza `structure.json`.
 - [0001](decisioni/0001-struttura-hardcoded-per-indice.md) e
