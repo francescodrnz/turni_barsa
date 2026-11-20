@@ -31,6 +31,8 @@ in grigio, pulizia bagni come etichetta sotto il luogo, sempre in una pagina.
 Passa a fpdf2 con il carattere Inter in `fonts/` e `uharfbuzz`. Verificato in
 locale (script, CLI, app); su Streamlit Cloud va provato dopo il push, con un
 "Reboot app" se l'import di `week_period` o le dipendenze nuove danno errore.
+I numeri dei giorni compaiono senza zero iniziale ("1", non "01" come nel PDF
+in input).
 
 Provati a mano su Streamlit Cloud: caricamento da file, nome del file scaricato
 (anche a cavallo di due mesi), pulizia bagni dall'orario (sett. 47) e il lunedì

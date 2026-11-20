@@ -540,7 +540,8 @@ def _days_for_pdf(shifts):
         if name not in DAY_NAMES:
             continue
         index = DAY_NAMES.index(name)
-        day = days.setdefault(index, {"number": shift[1], "rows": []})
+        number = str(shift[1]).strip()
+        day = days.setdefault(index, {"number": number.lstrip("0") or number, "rows": []})
         day["rows"].append((shift[2], shift[3], shift[4] if len(shift) > 4 else ""))
     result = []
     for index in sorted(days):
