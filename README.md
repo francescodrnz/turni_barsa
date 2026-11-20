@@ -27,6 +27,10 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   un orario su due righe vale per entrambe. `normalize_time` lo riporta a
   `HH:MM-HH:MM` (`12,00-18,00`, `09:0011:00`, `15::00`, nome attaccato). Un
   orario scritto nella cella del dipendente ha la precedenza.
+- **Bordo mancante fra orario e lunedì**: senza quel bordo pdfplumber unisce
+  la cella dell'orario con quelle dei giorni e il nome finisce in colonna 1.
+  Quando la cella della colonna 1 si allarga oltre il suo bordo destro, le
+  colonne dei giorni che copre si rileggono per posizione con `_text_in`.
 - **Controlli**: PDF che non si apre, scansione senza testo, nessun header dei
   giorni, meno di `MIN_LOCATIONS` (5) luoghi distinti → `ValueError` con un
   messaggio. Non si estraggono turni da una tabella che non ha la forma attesa.
@@ -116,6 +120,10 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
 - 2026-11-13, pulizia bagni dall'orario (0006) su `pdf_turni/`: sett. 47 4
   "Mattina" e 7 "19:00", dal 02 al 08 7 + 7; tutti gli altri PDF con valori e
   avvisi identici al metodo della 0004.
+- 2026-11-20, bordo mancante fra orario e lunedì: su `pdf_turni/` cambiano
+  solo tre turni, tutti di lunedì e tutti prima persi come "Riposo": sett. 48
+  Crudele a Villa Bonelli (09-13 e 16-20), sett. 44 Iodice e dal 02 al 08
+  Ricchitelli al Paladisfida Borgia. Tutti gli altri turni sono identici.
 - 2026-11-06, nome del file: su 17 PDF di `pdf_turni/` con il periodo nel nome,
   17 uguali. Sett. 44, sett. 45 e sett. 46 (da link Adobe) danno la settimana
   giusta. I PDF sono creati 3-5 giorni prima del lunedì; spostando il

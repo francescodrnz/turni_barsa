@@ -260,6 +260,14 @@ def read_shift_table(file_path):
                 location = None  # riga vuota di separazione fra le sezioni
             for i in range(a, b + 1):
                 cells = [str(c).strip() if c else '' for c in data[i]]
+                # Senza il bordo fra orario e lunedì, pdfplumber unisce le due celle e il
+                # nome finisce in colonna 1: le colonne coperte si rileggono per posizione.
+                time_box = table.rows[i].cells[1]
+                if time_box and time_box[2] > x2 + 1:
+                    for c in days:
+                        if col_lefts[c] < time_box[2] - 1:
+                            cells[c] = _text_in(page, col_lefts[c], row_tops[i], col_lefts[c + 1], row_tops[i + 1])
+                    cells[1] = _text_in(page, x1, row_tops[i], x2, row_tops[i + 1])
                 is_header = i <= header_idx or cells[1].lower() == 'turno'
                 colors = {c: _fill_at(page, sum(day_x[c]) / 2, (row_tops[i] + row_tops[i + 1]) / 2) for c in days}
                 rows.append({

@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Aggiornato il 2026-11-13.
+Aggiornato il 2026-11-20.
 
 App Streamlit (deploy da `main`) e script locale che estraggono i turni di una
 persona dal PDF settimanale "servizio custodia e pulizia" e generano un PDF
@@ -16,6 +16,10 @@ La colonna "Pulizia bagni" di Giardini del Castello si riempie da sola ("19:00",
 quali colori contano, il valore viene dall'orario del turno (decisione 0006,
 che supera la 0004). Verificato su tutti i PDF di `pdf_turni/`, comprese la
 sett. 47 e la "dal 02 al 08", dove la legenda ha una disposizione diversa.
+
+Quando in una riga manca il bordo fra la colonna dell'orario e il lunedì, i
+nomi del lunedì vengono riletti per posizione (prima finivano persi, e quel
+giorno risultava "Riposo"). Verificato sulla sett. 48 e su tutto `pdf_turni/`.
 
 Il nome del PDF generato non dipende più dal nome del file in input: viene dai
 giorni della tabella e dalla data di creazione del PDF (decisione 0005).
