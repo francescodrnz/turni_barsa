@@ -25,6 +25,14 @@ Il nome del PDF generato non dipende più dal nome del file in input: viene dai
 giorni della tabella e dalla data di creazione del PDF (decisione 0005).
 Verificato su `pdf_turni/`, con la sett. 46 da link Adobe e con lo script.
 
+Il PDF generato ha un layout nuovo (decisione 0007): periodo nell'intestazione,
+striscia dei sette giorni con Mattina/Pomeriggio, un blocco per giorno, assenze
+in grigio, pulizia bagni come etichetta sotto il luogo, sempre in una pagina.
+Passa a fpdf2 con il carattere Inter in `fonts/` e `uharfbuzz`. Verificato in
+locale (script, CLI, app); su Streamlit Cloud va provato dopo il push, con un
+"Reboot app" se l'import di `week_period` o le dipendenze nuove danno errore.
+
 Provati a mano su Streamlit Cloud: caricamento da file, nome del file scaricato
 (anche a cavallo di due mesi), pulizia bagni dall'orario (sett. 47) e il lunedì
-di Crudele nella sett. 48. Nessun lavoro aperto in TODO.md.
+di Crudele nella sett. 48 (prima del nuovo layout). Aperto in TODO.md: il push
+e la prova del nuovo PDF su Streamlit Cloud.

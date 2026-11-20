@@ -59,8 +59,23 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
 - Le celle unite allargano verso destra e verso il basso i bbox di righe e
   colonne di pdfplumber: per trovare una cella si usano solo i bordi sinistro
   e superiore (`col.bbox[0]`, `row.bbox[1]`).
-- `write_shifts_to_pdf` genera il PDF con fpdf. Se fra i turni c'è Giardini del
-  Castello, aggiunge la colonna "Pulizia bagni" ("No" dove il valore manca).
+- **PDF generato** (decisione 0007): `write_shifts_to_pdf(turni, percorso,
+  cognome, periodo)` scrive una pagina A4 con fpdf2 e il carattere Inter di
+  `fonts/`. In alto "Turni di lavoro", il nome e il periodo (`week_period`:
+  "dal 12 al 18 agosto 2026", stessa fonte di `output_filename`; mese e anno
+  del primo giorno solo se cambiano). Sotto, la striscia dei sette giorni:
+  riquadro chiaro con Notte/Mattina/Pomeriggio (`parts_of_day`: Notte se il
+  turno comincia prima delle 5, Mattina se prima delle 12, Pomeriggio se
+  finisce dopo le 16 o comincia da mezzogiorno) oppure bianco col nome
+  dell'assenza; un giorno senza righe ha il riquadro vuoto. Poi l'elenco: un
+  blocco per giorno (`_days_for_pdf`), turni ordinati per inizio e fine, orari
+  con le cifre tabulari di Inter (`tnum`, richiede `uharfbuzz`) così stanno in
+  colonna; un giorno fatto solo di stati (`is_status_location`) è un'assenza in
+  grigio, uno stato in un giorno di lavoro è una riga in corsivo. La pulizia
+  bagni è un'etichetta ambra sotto il luogo ("alle 19:00", "di mattina";
+  niente per "No" o vuoto, il testo così com'è per un valore scritto a mano).
+  Il corpo si misura a scala 1 e si ridisegna con la scala che riempie la
+  pagina (al massimo 1,45): sempre una pagina sola.
 - `output_filename` dà il nome del file, `Turni <cognome> dal 09 al 15
   novembre.pdf`, senza guardare il nome del PDF di partenza. Giorni e numeri
   vengono dall'intestazione della tabella; mese e anno dalla data più vicina
@@ -96,7 +111,9 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   nella tab Modifica turni.
 - **In locale**: il `.venv` del repo è creato con `uv` e non ha `pip`; i
   pacchetti si installano con `uv pip install -p .venv/bin/python -r
-  requirements.txt`. Per il solo parser bastano `pdfplumber` e `fpdf`. Si lancia `main.py` da una cartella che contiene il PDF: il
+  requirements.txt`. Per il solo parser e il PDF bastano `pdfplumber`, `fpdf2` e
+  `uharfbuzz`; la vecchia `fpdf` va tolta (`uv pip uninstall -p
+  .venv/bin/python fpdf`) perché usa lo stesso nome di modulo. Si lancia `main.py` da una cartella che contiene il PDF: il
   programma propone tutti i PDF della cartella tranne quelli che iniziano con
   "Turni ", chiede il cognome, stampa avvisi e turni e scrive il PDF nella
   cartella corrente.
@@ -129,7 +146,18 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
   giusta. I PDF sono creati 3-5 giorni prima del lunedì; spostando il
   riferimento di ±14 giorni il risultato non cambia.
 
+- 2026-11-20, PDF generato (0007): una pagina per tutte le prove (sett. 47 e 48,
+  Crudele 12-18 ago, Iodice 22-28 gen con 3 turni al giorno, Curci F. 10-16 nov
+  con 4 pulizie, un caso con righe a mano); scala da 1,13 (Iodice) a 1,45.
+  0,3 s e 26 KB per PDF. `week_period` uguale al nome del file su 18 PDF, anche
+  a cavallo d'anno ("dal 29 dicembre 2025 al 4 gennaio 2026").
+
 ## Limiti e comportamenti noti
+- **PDF generato, testi lunghi**: un luogo che non sta nello spazio si
+  rimpicciolisce fino al 75% e poi si accorcia con "…"; nel riquadro della
+  striscia "Riposo - <luogo> (chiuso)" diventa "Riposo". Un orario che non è
+  `HH:MM-HH:MM` (scritto a mano) compare così com'è e non dà Mattina/Pomeriggio.
+  Una riga aggiunta a mano senza giorno non finisce nel PDF.
 - **Dipende dai bordi di Excel**: se l'azienda cambia lo stile dei bordi in
   colonna 0, i blocchi non si riconoscono più. Con meno di 5 luoghi l'estrazione
   si ferma con un errore. Con un cambio parziale potrebbe passare: in caso di
@@ -169,7 +197,8 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
 - CLI: non permette di correggere i turni, solo di estrarli e generare il PDF.
   Le correzioni si fanno dall'app.
 - Tab Modifica turni: le celle lasciate vuote in una riga aggiunta finiscono
-  nel PDF come testo vuoto, le righe del tutto vuote si scartano al salvataggio.
+  nel PDF come testo vuoto (un turno senza orario ha "—"), le righe del tutto
+  vuote si scartano al salvataggio.
 - I PDF dei turni (originali e generati) contengono nomi, malattie e permessi
   dei colleghi: non vanno messi nel repo. `.gitignore` esclude `*.pdf`; per le
   prove in locale si tengono in `pdf_turni/`.
@@ -216,6 +245,8 @@ uv pip install -p .venv/bin/python -r requirements.txt && .venv/bin/streamlit ru
 ```
 
 ## Decisioni collegate
+- [0007](decisioni/0007-layout-pdf-generato.md) — Layout del PDF generato:
+  striscia della settimana più elenco dei giorni, con fpdf2 e Inter.
 - [0006](decisioni/0006-pulizia-bagni-dall-orario.md) — Pulizia bagni: la
   legenda dice quali colori, l'orario del turno dice quale pulizia.
 - [0005](decisioni/0005-nome-file-dal-contenuto-del-pdf.md) — Nome del PDF

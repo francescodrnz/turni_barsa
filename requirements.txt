@@ -1,4 +1,5 @@
-fpdf
+fpdf2
+uharfbuzz
 pdfplumber
 streamlit
 Pillow

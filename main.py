@@ -333,6 +333,24 @@ def output_filename(table, surname, today=None):
     return f"Turni {surname} dal {start.day:02d}{start_month} al {end.day:02d} {MONTH_NAMES[end.month - 1]}.pdf"
 
 
+def week_period(table, today=None):
+    """
+    Periodo da scrivere nel PDF generato, "dal 12 al 18 agosto 2026": stessa fonte di
+    output_filename. Mese e anno del primo giorno compaiono solo se cambiano.
+    """
+    days = [table["days"][col] for col in sorted(table["days"])]
+    start = _first_day_date(days, table.get("creato") or today or date.today())
+    if start is None:
+        return f"dal {int(days[0][1])} al {int(days[-1][1])}"
+    end = start + timedelta(len(days) - 1)
+    first = f"{start.day}"
+    if start.year != end.year:
+        first += f" {MONTH_NAMES[start.month - 1]} {start.year}"
+    elif start.month != end.month:
+        first += f" {MONTH_NAMES[start.month - 1]}"
+    return f"dal {first} al {end.day} {MONTH_NAMES[end.month - 1]} {end.year}"
+
+
 def table_debug_rows(table):
     """Una riga per riga del PDF, con luogo e orario assegnati: per la vista di controllo."""
     return [{
@@ -443,78 +461,240 @@ def sort_days(shifts):
 
     return sorted(shifts, key=lambda s: (get_day_number(s), get_time(s)))
 
-def write_shifts_to_pdf(shifts, out_path, surname):
-    shifts = sort_days(shifts)
+# ── PDF generato ─────────────────────────────────────────────────────────────
+# Layout scelto nella decisione 0007: striscia dei sette giorni in alto, poi un
+# blocco per giorno con orari e luoghi. Si misura il corpo a scala 1 e poi lo si
+# ridisegna ingrandito (fino a PDF_MAX_SCALE) o rimpicciolito per riempire una pagina.
 
-    has_bagni = has_giardini_castello(shifts)
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+PDF_FONTS = {"regular": "Inter-Regular", "italic": "Inter-Italic", "semibold": "Inter-SemiBold",
+             "bold": "Inter-Bold", "display": "InterDisplay-Bold"}
+PDF_MAX_SCALE = 1.45
+PDF_MARGIN = 16
+PAGE_W, PAGE_H = 210, 297
 
-    if has_bagni:
-        updated_shifts = []
-        for shift in shifts:
-            if len(shift) < 5:
-                pulizia = "No" if "giardini del castello" in shift[2].lower() else ""
-                updated_shifts.append(shift + (pulizia,))
-            else:
-                pulizia_value = shift[4]
-                if "giardini del castello" in shift[2].lower() and not pulizia_value:
-                    updated_shifts.append(shift[:4] + ("No",))
-                else:
-                    updated_shifts.append(shift)
-        shifts = updated_shifts
+INK = (17, 24, 39)
+MUTED = (107, 114, 128)
+FAINT = (156, 163, 175)
+LINE = (229, 231, 235)
+ACCENT = (30, 64, 175)
+STRIP_FILL = (226, 232, 240)   # chiaro: poco inchiostro in stampa
+STRIP_TEXT = (30, 41, 59)
+AMBER = (146, 64, 14)
+AMBER_SOFT = (254, 243, 199)
+WHITE = (255, 255, 255)
 
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
 
-    pdf.set_font("Arial", "B", size=17)
-    pdf.cell(200, 10, txt=f"Turni di lavoro {surname}", ln=True, align='C')
-    pdf.ln(10)
+def _minutes(hhmm):
+    hours, minutes = hhmm.split(":")
+    return int(hours) * 60 + int(minutes)
 
-    # Calculate total table width to center it
-    if has_bagni:
-        table_width = 25 + 10 + 80 + 40 + 30 # = 185
-    else:
-        table_width = 30 + 15 + 85 + 60 # = 190
-    
-    page_width = 210 # A4 width in mm
-    x_offset = (page_width - table_width) / 2
 
-    pdf.set_font("Arial", size=12)
-    pdf.set_fill_color(200, 200, 200)
+def parts_of_day(time_range):
+    """
+    Parti della giornata occupate da un turno: Notte se comincia prima delle 5,
+    Mattina se prima delle 12, Pomeriggio se finisce dopo le 16 o comincia da
+    mezzogiorno. 08:45-14:45 è solo Mattina (il pomeriggio è libero), 09-17 tutte e due.
+    Orario non leggibile (es. scritto a mano) → nessuna.
+    """
+    match = re.fullmatch(r"\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*", time_range or "")
+    if not match:
+        return set()
+    start, end = _minutes(match[1]), _minutes(match[2])
+    parts = set()
+    if start < 5 * 60:
+        parts.add("Notte")
+    elif start < 12 * 60:
+        parts.add("Mattina")
+    if end > 16 * 60 or start >= 12 * 60:
+        parts.add("Pomeriggio")
+    return parts
 
-    pdf.set_x(x_offset)
-    if has_bagni:
-        pdf.cell(25, 10, 'Giorno', border='LTB', align='R', fill=True)
-        pdf.cell(10, 10, ' ', border='RTB', align='C', fill=True)
-        pdf.cell(80, 10, 'Luogo', border=1, align='C', fill=True)
-        pdf.cell(40, 10, 'Orario', border=1, align='C', fill=True)
-        pdf.cell(30, 10, 'Pulizia bagni', border=1, align='C', fill=True)
-    else:
-        pdf.cell(30, 10, 'Giorno', border='LTB', align='R', fill=True)
-        pdf.cell(15, 10, ' ', border='RTB', align='C', fill=True)
-        pdf.cell(85, 10, 'Luogo', border=1, align='C', fill=True)
-        pdf.cell(60, 10, 'Orario', border=1, align='C', fill=True)
-    pdf.ln()
 
+def _cleaning_label(value):
+    value = (value or "").strip()
+    if not value or value.lower() == "no":
+        return None
+    if value == "19:00":
+        return "Pulizia bagni alle 19:00"
+    if value.lower() == "mattina":
+        return "Pulizia bagni di mattina"
+    return f"Pulizia bagni: {value}"
+
+
+def _time_key(time_range):
+    """Ordine dentro un giorno: per inizio e poi per fine; orari non leggibili in fondo."""
+    match = re.fullmatch(r"\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*", time_range or "")
+    return (_minutes(match[1]), _minutes(match[2])) if match else (24 * 60, 24 * 60)
+
+
+def _days_for_pdf(shifts):
+    """
+    Per ogni giorno della settimana presente nei turni: (indice 0-6, nome, numero,
+    righe, assenza). Le righe sono (luogo, orario, pulizia) in ordine di orario;
+    assenza è il nome dello stato se tutte le righe del giorno sono stati, altrimenti None.
+    """
+    days = {}
     for shift in shifts:
-        day, day_number, location, time = shift[:4]
-        pulizia_bagni = shift[4] if len(shift) > 4 else ""
-        day_display = format_day_for_display(day)
+        name = normalize_day_name(shift[0])
+        if name not in DAY_NAMES:
+            continue
+        index = DAY_NAMES.index(name)
+        day = days.setdefault(index, {"number": shift[1], "rows": []})
+        day["rows"].append((shift[2], shift[3], shift[4] if len(shift) > 4 else ""))
+    result = []
+    for index in sorted(days):
+        rows = sorted(days[index]["rows"], key=lambda r: _time_key(r[1]))
+        statuses = [r for r in rows if is_status_location(r[0])]
+        absence = statuses[0][0] if len(statuses) == len(rows) else None
+        result.append((index, format_day_for_display(DAY_NAMES[index]).capitalize(),
+                       days[index]["number"], rows, absence))
+    return result
 
-        pdf.set_x(x_offset)
-        if has_bagni:
-            pdf.cell(25, 10, day_display, border='LTB', align='R')
-            pdf.cell(10, 10, day_number, border='RTB', align='L')
-            pdf.cell(80, 10, location[:40], border=1, align='C')
-            pdf.cell(40, 10, time, border=1, align='C')
-            pdf.cell(30, 10, pulizia_bagni, border=1, align='C')
+
+class _ShiftsPDF(FPDF):
+    def __init__(self):
+        super().__init__(format="A4")
+        self.set_auto_page_break(False)
+        self.set_margins(PDF_MARGIN, PDF_MARGIN, PDF_MARGIN)
+        for style, name in PDF_FONTS.items():
+            self.add_font(style, "", os.path.join(FONT_DIR, name + ".otf"))
+
+    def use(self, font, size, color=INK):
+        self.set_font(font, "", size)
+        self.set_text_color(*color)
+
+    def write_at(self, x, y, s, font, size, color=INK, align="L", width=0, spacing=0):
+        """Testo con la linea di base a y (mm); align C/R dentro width."""
+        self.use(font, size, color)
+        self.set_char_spacing(spacing)
+        if align != "L":
+            free = width - self.get_string_width(s)
+            x += free if align == "R" else free / 2
+        self.text(x, y, s)
+        self.set_char_spacing(0)
+
+    def write_fit(self, x, y, s, font, size, color, max_width, min_ratio=0.75, align="L", width=0):
+        """Testo che sta in max_width: prima rimpicciolisce fino a min_ratio, poi accorcia con …"""
+        current = size
+        self.set_font(font, "", current)
+        while self.get_string_width(s) > max_width and current > size * min_ratio:
+            current -= 0.25
+            self.set_font(font, "", current)
+        while self.get_string_width(s) > max_width and len(s) > 4:
+            s = s[:-2].rstrip() + "…"
+        self.write_at(x, y, s, font, current, color, align, width)
+
+    def tabular(self, on):
+        """Cifre tabulari di Inter: tutti gli orari hanno la stessa larghezza."""
+        if on:
+            self.set_text_shaping(use_shaping_engine=True, features={"tnum": True})
         else:
-            pdf.cell(30, 10, day_display, border='LTB', align='R')
-            pdf.cell(15, 10, day_number, border='RTB', align='L')
-            pdf.cell(85, 10, location[:44], border=1, align='C')
-            pdf.cell(60, 10, time, border=1, align='C')
-        pdf.ln()
+            self.set_text_shaping(False)
 
+    def pill(self, x, top, s, size, height):
+        self.use("semibold", size, AMBER)
+        width = self.get_string_width(s) + 6
+        self.set_fill_color(*AMBER_SOFT)
+        self.rect(x, top, width, height, style="F", round_corners=True, corner_radius=height / 2)
+        self.text(x + 3, top + height / 2 + size * 0.127, s)
+
+
+def _pdf_header(pdf, name, period):
+    left = PDF_MARGIN
+    pdf.write_at(left, 22, "TURNI DI LAVORO", "semibold", 9.5, ACCENT, spacing=1.2)
+    pdf.write_fit(left, 34, name, "display", 26, INK, PAGE_W - 2 * left)
+    if period:
+        pdf.write_at(left, 43, period[0].upper() + period[1:], "regular", 14, MUTED)
+        return 52
+    return 44
+
+
+def _pdf_body(pdf, days, y, k):
+    """Striscia della settimana ed elenco dei giorni a scala k; ritorna la y finale."""
+    left, width = PDF_MARGIN, PAGE_W - 2 * PDF_MARGIN
+    gap = 2.5
+    box_w = (width - 6 * gap) / 7
+    box_h = 25 * k
+    by_index = {d[0]: d for d in days}
+    for index in range(7):
+        x = left + index * (box_w + gap)
+        day = by_index.get(index)
+        if day is None:  # giorno senza righe (tolte a mano): solo il nome
+            pdf.set_draw_color(*LINE)
+            pdf.set_line_width(0.3)
+            pdf.rect(x, y, box_w, box_h, style="D", round_corners=True, corner_radius=2.5)
+            pdf.write_at(x, y + 6 * k, DAY_NAMES[index][:3].upper(), "semibold", 8.5 * k, FAINT, "C", box_w, 0.8)
+            continue
+        _, name, number, rows, absence = day
+        if absence:
+            pdf.set_draw_color(*LINE)
+            pdf.set_line_width(0.4)
+            pdf.set_fill_color(*WHITE)
+            pdf.rect(x, y, box_w, box_h, style="DF", round_corners=True, corner_radius=2.5)
+            label_color = number_color = MUTED
+            labels = [absence.split(" - ")[0]]  # "Riposo - <luogo> (chiuso)": il luogo è nell'elenco
+        else:
+            pdf.set_fill_color(*STRIP_FILL)
+            pdf.rect(x, y, box_w, box_h, style="F", round_corners=True, corner_radius=2.5)
+            label_color, number_color = STRIP_TEXT, INK
+            parts = set().union(*(parts_of_day(r[1]) for r in rows if not is_status_location(r[0])))
+            labels = [p for p in ("Notte", "Mattina", "Pomeriggio") if p in parts]
+        pdf.write_at(x, y + 6 * k, name[:3].upper(), "semibold", 8.5 * k, label_color, "C", box_w, 0.8)
+        pdf.write_at(x, y + 13.5 * k, number, "display", 16 * k, number_color, "C", box_w)
+        label_y = y + {0: 0, 1: 20.2, 2: 18.6, 3: 17.2}[len(labels)] * k
+        for label in labels:
+            pdf.write_fit(x, label_y, label, "semibold", 7.8 * k, label_color, box_w - 2, 0.6, "C", box_w)
+            label_y += 3.6 * k
+    y += box_h + 7 * k
+
+    size = 12 * k
+    pdf.set_font("semibold", "", size)
+    pdf.tabular(True)
+    time_w = pdf.get_string_width("00:00 – 00:00")
+    pdf.tabular(False)
+    x_time = left + 40 * k
+    x_place = x_time + time_w + 6 * k
+    place_w = left + width - x_place
+    for _, name, number, rows, absence in days:
+        pdf.write_at(left, y + 6 * k, f"{name} {number}", "bold", size, FAINT if absence else INK)
+        if absence:
+            pdf.write_fit(x_time, y + 6 * k, absence, "italic", size, MUTED, left + width - x_time)
+            y += 9.5 * k
+        else:
+            for place, time, cleaning in rows:
+                if is_status_location(place):  # es. permesso in un giorno di lavoro
+                    pdf.write_fit(x_place, y + 6 * k, place, "italic", size, MUTED, place_w)
+                else:
+                    pdf.tabular(True)
+                    pdf.write_at(x_time, y + 6 * k, time.replace("-", " – ") if time else "—", "semibold", size, INK)
+                    pdf.tabular(False)
+                    pdf.write_fit(x_place, y + 6 * k, place, "regular", size, INK, place_w)
+                y += 8.5 * k
+                label = _cleaning_label(cleaning)
+                if label:
+                    pdf.pill(x_place, y - 0.5 * k, label, 9.5 * k, 6 * k)
+                    y += 7 * k
+            y += 1.5 * k
+        pdf.set_draw_color(*LINE)
+        pdf.set_line_width(0.3)
+        pdf.line(left, y, left + width, y)
+        y += 2.5 * k
+    return y
+
+
+def write_shifts_to_pdf(shifts, out_path, surname, period=None):
+    """PDF di una pagina con i turni della settimana; period è il testo di week_period."""
+    days = _days_for_pdf(shifts)
+    name = " ".join(w[:1].upper() + w[1:] for w in surname.split())
+    pdf = _ShiftsPDF()
+    pdf.add_page()
+    top = _pdf_header(pdf, name, period)
+    probe = _ShiftsPDF()
+    probe.add_page()
+    height = _pdf_body(probe, days, top, 1.0) - top
+    scale = min(PDF_MAX_SCALE, (PAGE_H - PDF_MARGIN - top) / height)
+    _pdf_body(pdf, days, top, scale)
     pdf.output(out_path)
     print(f"File '{out_path}' creato con successo!")
     return out_path
@@ -592,7 +772,7 @@ def main():
     shifts_sorted = sort_days(shifts)
     print_shifts(shifts_sorted)
 
-    write_shifts_to_pdf(shifts_sorted, output_filename(table, surname), surname)
+    write_shifts_to_pdf(shifts_sorted, output_filename(table, surname), surname, week_period(table))
     input("Premi Invio per uscire...")
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from main import (
     normalize_day_name,
     table_debug_rows,
     output_filename,
+    week_period,
 )
 import tempfile
 import os
@@ -350,8 +351,8 @@ def df_to_shifts(df):
     return shifts
 
 
-def generate_pdf_bytes(shifts, out_path, surname):
-    output_name = write_shifts_to_pdf(shifts, out_path, surname)
+def generate_pdf_bytes(shifts, out_path, surname, period):
+    output_name = write_shifts_to_pdf(shifts, out_path, surname, period)
     with open(output_name, "rb") as f:
         pdf_bytes = f.read()
     if os.path.exists(output_name):
@@ -473,7 +474,8 @@ else:
                 st.session_state.generated_pdf_bytes = generate_pdf_bytes(
                     st.session_state.shifts,
                     st.session_state.output_filename,
-                    st.session_state.surname
+                    st.session_state.surname,
+                    week_period(st.session_state.table),
                 )
                 st.session_state.need_regenerate = False
         
