@@ -25,6 +25,6 @@ Il nome del PDF generato non dipende più dal nome del file in input: viene dai
 giorni della tabella e dalla data di creazione del PDF (decisione 0005).
 Verificato su `pdf_turni/`, con la sett. 46 da link Adobe e con lo script.
 
-Provati a mano su Streamlit Cloud: caricamento da file e nome del file scaricato
-(anche a cavallo di due mesi). La pulizia bagni dall'orario non è ancora stata
-provata online: è l'unica voce di TODO.md.
+Provati a mano su Streamlit Cloud: caricamento da file, nome del file scaricato
+(anche a cavallo di due mesi), pulizia bagni dall'orario (sett. 47) e il lunedì
+di Crudele nella sett. 48. Nessun lavoro aperto in TODO.md.
