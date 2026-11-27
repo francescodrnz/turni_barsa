@@ -74,15 +74,24 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
     borgia…"), confrontando le parole del nome del luogo (`_location_words`:
     almeno 4 lettere, senza `GENERIC_WORDS`) con il testo, entrambi passati per
     `_plain` (minuscole, senza accenti). Etichetta "Nota N". I luoghi citati
-    dopo ("…aprire i giardini di viale Manzoni") non contano;
+    dopo ("…aprire i giardini di viale Manzoni") non contano. Se il testo
+    scrive un orario ("turno 10,00-12,00") o una parte del giorno
+    ("pomeridiano", "antimeridiana", "mattino"), `_times_named_in` tiene solo
+    gli orari del luogo che li toccano (la nota del Puttilli va solo sui turni
+    di mattina; quella del Borgia, che nomina sia il pomeriggio sia 08-14,
+    resta su tutti);
   - `notes_with_labels`: se c'è la chiave, `gemini_notes` chiama Gemini
     (REST, `requests` importato solo lì) con le note e le righe della tabella
     come luogo, orario e giorni in cui la cella sembra un nome
-    (`_looks_like_name`), **mai i nomi**. `apply_gemini` abbina per `n`, prende
-    l'etichetta (max 45 caratteri) e restringe le regole dentro il luogo del
-    livello 2: orario uguale, altrimenti quelli che si sovrappongono in senso
-    stretto; giorni con `normalize_day_name`; liste vuote = nessuna
-    restrizione. Gemini non aggiunge luoghi. Qualunque errore (rete, codice
+    (`_looks_like_name`), **mai i nomi**. Gemini risponde con un'etichetta per
+    nota e una per ogni turno (luogo + orario), così una nota che chiede cose
+    diverse a turni diversi (Borgia: pomeriggio "Apri/chiudi Manzoni e Green
+    Park", domenica 08-14 "Apertura antimeridiana") ha etichette diverse.
+    `apply_gemini` abbina per `n`, prende le etichette (max 45 caratteri) e
+    restringe le regole dentro il luogo e gli orari del livello 2: orario
+    uguale, altrimenti quelli che si sovrappongono in senso stretto; giorni con
+    `normalize_day_name`; liste vuote = nessuna restrizione. Gemini non
+    aggiunge luoghi e non allarga gli orari. Qualunque errore (rete, codice
     non 200, risposta illeggibile) lascia il livello 2 e un messaggio.
   - `notes_for_shift` dice quali note valgono per un turno (luogo con
     `_plain`, orario con `normalize_time`, giorno con `normalize_day_name`):
@@ -167,8 +176,9 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
 - **Chiave Gemini** (facoltativa; senza, le etichette sono "Nota N"): si crea
   gratis su Google AI Studio. Su Streamlit Cloud: Manage app → Settings →
   Secrets, una riga `GEMINI_API_KEY = "..."`. I modelli si provano a cascata
-  (`GEMINI_MODELS`: gemini-3.6-flash, gemini-3.8-flash, gemini-3.5-flash-lite):
-  se uno dà errore (503 per troppo traffico, 429) si passa al successivo.
+  (`GEMINI_MODELS`: gemini-3.6-flash, gemini-3.8-flash, gemini-3.5-flash-lite),
+  con al massimo `GEMINI_TIMEOUT` (40 s) ciascuno: se uno dà errore (503 per
+  troppo traffico, 429) o non risponde in tempo si passa al successivo.
   `GEMINI_MODEL` nei Secrets, con uno o più nomi separati da virgole, sostituisce
   la lista. In locale per l'app:
   `.streamlit/secrets.toml` con la stessa riga (escluso da git); per la CLI:
@@ -208,6 +218,11 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
   0,3 s e 26 KB per PDF. `week_period` uguale al nome del file su 18 PDF, anche
   a cavallo d'anno ("dal 29 dicembre 2025 al 4 gennaio 2026").
 
+- 2026-11-27, Gemini sulla 49 con la chiave vera: gemini-3.6-flash 17-54 s,
+  etichette specifiche e una per turno; gemini-3.8-flash 503 (troppo
+  traffico); gemini-3.5-flash-lite 1,5-2 s, etichette a volte generiche
+  ("Gestisci giardini e parchi"). Le risposte cambiano un po' da una chiamata
+  all'altra anche a temperatura 0.
 - 2026-11-27, indicazioni (0008) su `pdf_turni/`: sett. 49, 48, 47 5 note
   (2 di pulizia), 44 e 02-08 4-5; nei PDF fino a maggio 2026 solo note ad
   asterisco e legenda. Collegamenti: sulla 49 Crudele ha la nota del Puttilli

@@ -397,6 +397,8 @@ def describe_rules(note):
             text += " " + ", ".join(rule["orari"])
         if rule.get("giorni"):
             text += " (" + ", ".join(_day(d)[:3] for d in rule["giorni"]) + ")"
+        if rule.get("etichetta"):
+            text += f": «{rule['etichetta']}»"
         parts.append(text)
     return "; ".join(parts)
 
@@ -480,6 +482,8 @@ with st.sidebar:
                     st.session_state.need_regenerate = True
                     st.session_state.last_processed_key = current_proc_key
                     api_key, model = gemini_settings()
+                    if api_key:
+                        st.toast("Etichette delle indicazioni da Gemini: può volerci fino a un minuto…")
                     st.session_state.notes, st.session_state.notes_source = notes_with_labels(
                         table, api_key, model, call=cached_gemini)
                     st.session_state.notes_run += 1  # tabella delle indicazioni nuova: niente modifiche vecchie
@@ -595,7 +599,9 @@ else:
             st.info("Nessuna indicazione accanto alla tabella in questo PDF.")
         else:
             st.caption("Il testo intero va sempre in fondo al PDF. Qui si cambia l'etichetta accanto ai turni "
-                       "o la si toglie (Attiva). Le modifiche valgono solo per questa elaborazione.")
+                       "o la si toglie (Attiva). Le etichette per turno di Gemini sono nella colonna Turni; "
+                       "un'etichetta cambiata qui vale per tutti i turni della nota. "
+                       "Le modifiche valgono solo per questa elaborazione.")
             linked = [n for n in notes if n.get("regole")]
             text_only = [n for n in notes if not n.get("regole")]
             notes_df = pd.DataFrame([{
@@ -630,7 +636,10 @@ else:
                     row = changes.get(n["n"])
                     if row is not None:
                         label = "" if pd.isna(row["Etichetta"]) else str(row["Etichetta"]).strip()
-                        n = dict(n, etichetta=label or f"Nota {n['n']}", attiva=bool(row["Attiva"]))
+                        label = label or f"Nota {n['n']}"
+                        if label != n["etichetta"]:  # etichetta scritta a mano: vale per tutti i turni
+                            n = dict(n, regole=[dict(r, etichetta=None) for r in n["regole"]])
+                        n = dict(n, etichetta=label, attiva=bool(row["Attiva"]))
                     updated.append(n)
                 st.session_state.notes = updated
                 st.session_state.need_regenerate = True

@@ -523,6 +523,7 @@ GENERIC_WORDS = {'giardini', 'giardino', 'stadio', 'parco', 'villa', 'viale', 'p
 # Provati in ordine: se uno risponde con un errore (503 per troppo traffico, 429, …) si passa al successivo.
 GEMINI_MODELS = ("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite")
 GEMINI_LABEL_MAX = 45
+GEMINI_TIMEOUT = 40  # secondi per modello: la 3.6-flash risponde in 15-50 s
 
 
 def _plain(text):
@@ -546,6 +547,34 @@ def _table_locations(table):
     return seen
 
 
+def _place_times(table, place):
+    """Orari di riga di un luogo, nell'ordine della tabella."""
+    times = []
+    for row in table["rows"]:
+        if row["luogo"] == place and not row["header"] and row["orario"] and row["orario"] not in times:
+            times.append(row["orario"])
+    return times
+
+
+def _times_named_in(text, times):
+    """
+    Orari di un luogo a cui un'indicazione si restringe da sola: quelli che toccano
+    un orario scritto nel testo ("turno 10,00-12,00") e quelli della parte del giorno
+    nominata ("turno pomeridiano", "antimeridiana", "mattino"). None se il testo non
+    restringe niente, o se resterebbero tutti.
+    """
+    ranges = [normalize_time(m[0]) for m in TIME_RANGE.finditer(text)]
+    plain = _plain(text)
+    parts = set()
+    if re.search(r"\b(antimeridian|mattin)", plain):
+        parts.add("Mattina")
+    if re.search(r"\bpomerid", plain):
+        parts.add("Pomeriggio")
+    chosen = [t for t in times
+              if any(t == r or _overlap(t, r) for r in ranges if r) or parts & parts_of_day(t)]
+    return chosen if chosen and len(chosen) < len(times) else None
+
+
 def link_notes(table):
     """
     Copia delle indicazioni della tabella con le regole del livello 2: ogni nota
@@ -565,14 +594,17 @@ def link_notes(table):
                 if index is not None and (first is None or index < first[0]):
                     first = (index, place)
             if first:
-                note["regole"] = [{"luogo": first[1], "orari": None, "giorni": None}]
+                times = _place_times(table, first[1])
+                note["regole"] = [{"luogo": first[1], "orari": _times_named_in(note["testo"], times),
+                                   "giorni": None, "orari_luogo": times}]
         notes.append(note)
     return notes
 
 
 def notes_for_shift(shift, notes, include_inactive=False):
     """
-    Indicazioni attive che valgono per un turno (giorno, numero, luogo, orario, …).
+    Indicazioni attive che valgono per un turno (giorno, numero, luogo, orario, …),
+    con l'etichetta della regola che lo prende (Gemini può darne una per turno).
     Un orario scritto nella cella (diverso da quello della riga) vale se coincide o
     si sovrappone a uno degli orari della regola.
     """
@@ -596,7 +628,7 @@ def notes_for_shift(shift, notes, include_inactive=False):
                     continue
             if rule.get("giorni") and day not in {normalize_day_name(d) for d in rule["giorni"]}:
                 continue
-            result.append(note)
+            result.append(dict(note, etichetta=rule.get("etichetta") or note["etichetta"]))
             break
     return result
 
@@ -634,15 +666,23 @@ def gemini_request(table, notes):
 
 GEMINI_PROMPT = """Sei l'assistente di un servizio di custodia di parchi e strutture.
 Ricevi le indicazioni settimanali scritte dal responsabile e l'elenco dei turni
-(luogo, orario, giorni in cui c'è qualcuno). Per ogni indicazione rispondi con:
+(luogo, orario, giorni in cui c'è qualcuno). Rispondi per TUTTE le indicazioni,
+anche quelle che sono solo un'informazione (es. "Atleti Simeone entrano da via
+Chieffi"). Per ogni indicazione:
 - n: il numero dell'indicazione;
 - etichetta: un riassunto in italiano di al massimo 5-6 parole (massimo 45
-  caratteri) di cosa deve fare chi è di turno, da mettere accanto al turno
-  (es. "Apri e chiudi giardini Manzoni");
+  caratteri) di cosa deve fare chi è di turno, da mettere accanto al turno.
+  Nomina sempre il posto su cui agire, con i nomi propri con l'iniziale maiuscola
+  (es. "Apri e chiudi giardini Manzoni", non "Apri e chiudi giardini");
 - turni: a chi è rivolta, cioè l'addetto che deve fare la cosa (il soggetto),
-  non i luoghi solo citati. Usa esattamente i nomi di luogo e gli orari
-  dell'elenco. Lascia orario vuoto se vale per tutti i turni del luogo e giorni
-  vuoto se vale per tutti i giorni.
+  non i luoghi solo citati. Un elemento per ogni turno (luogo + orario) a cui
+  si applica, con i giorni se vale solo in alcuni, e la sua etichetta: se
+  l'indicazione chiede cose diverse a turni diversi (es. il turno del
+  pomeriggio apre e chiude dei giardini, quello della domenica mattina fa
+  l'apertura del mattino), ogni turno ha l'etichetta di quello che tocca a
+  lui. Usa esattamente i nomi di luogo e gli orari dell'elenco, un elemento
+  per orario. Non mettere turni a cui l'indicazione non si applica. Lascia
+  giorni vuoto se vale per tutti i giorni.
 
 Dati:
 """
@@ -672,10 +712,11 @@ def _gemini_call(request_json, api_key, model):
     schema = {"type": "ARRAY", "items": {"type": "OBJECT", "required": ["n", "etichetta", "turni"], "properties": {
         "n": {"type": "INTEGER"},
         "etichetta": {"type": "STRING"},
-        "turni": {"type": "ARRAY", "items": {"type": "OBJECT", "required": ["luogo"], "properties": {
+        "turni": {"type": "ARRAY", "items": {"type": "OBJECT", "required": ["luogo", "orario", "etichetta"], "properties": {
             "luogo": {"type": "STRING"},
             "orario": {"type": "STRING"},
             "giorni": {"type": "ARRAY", "items": {"type": "STRING", "enum": day_enum}},
+            "etichetta": {"type": "STRING"},
         }}},
     }}}
     response = requests.post(
@@ -684,7 +725,7 @@ def _gemini_call(request_json, api_key, model):
         json={"contents": [{"role": "user", "parts": [{"text": GEMINI_PROMPT + request_json}]}],
               "generationConfig": {"temperature": 0, "responseMimeType": "application/json",
                                    "responseSchema": schema}},
-        timeout=20,
+        timeout=GEMINI_TIMEOUT,
     )
     if response.status_code != 200:
         try:
@@ -737,6 +778,7 @@ def apply_gemini(table, notes, result):
         if 0 < len(label) <= GEMINI_LABEL_MAX:
             note["etichetta"] = label
         allowed = {_plain(r["luogo"]): r["luogo"] for r in note["regole"]}
+        base_hours = {_plain(r["luogo"]): r.get("orari") for r in note["regole"]}
         rules = []
         for turn in answer.get("turni") or []:
             if not isinstance(turn, dict) or _plain(str(turn.get("luogo", ""))) not in allowed:
@@ -747,10 +789,14 @@ def apply_gemini(table, notes, result):
             if wanted:
                 known = times.get(key, [])
                 hours = [wanted] if wanted in known else [t for t in known if _overlap(wanted, t)]
+            if base_hours.get(key):  # Gemini restringe gli orari già scelti dal testo, non li allarga
+                hours = [h for h in hours or [] if h in base_hours[key]] or base_hours[key]
             days = [normalize_day_name(str(d)) for d in turn.get("giorni") or []]
             days = [d for d in days if d in DAY_NAMES]
+            rule_label = str(turn.get("etichetta") or "").strip()
             rules.append({"luogo": allowed[key], "orari": hours or None, "giorni": days or None,
-                          "orari_luogo": times.get(key, [])})
+                          "orari_luogo": times.get(key, []),
+                          "etichetta": rule_label if 0 < len(rule_label) <= GEMINI_LABEL_MAX else None})
         if rules:
             note["regole"] = rules
         updated.append(note)
