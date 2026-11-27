@@ -392,6 +392,9 @@ def describe_rules(note):
         return "Nessun turno: solo testo"
     parts = []
     for rule in note["regole"]:
+        if rule.get("ripiego") and len(note["regole"]) > 1:
+            parts.append("altri turni indicati dal testo: «" + note["etichetta"] + "»")
+            continue
         text = rule["luogo"]
         if rule.get("orari"):
             text += " " + ", ".join(rule["orari"])

@@ -91,7 +91,9 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
     restringe le regole dentro il luogo e gli orari del livello 2: orario
     uguale, altrimenti quelli che si sovrappongono in senso stretto; giorni con
     `normalize_day_name`; liste vuote = nessuna restrizione. Gemini non
-    aggiunge luoghi e non allarga gli orari. Qualunque errore (rete, codice
+    aggiunge luoghi e non allarga gli orari. Dopo le regole di Gemini restano
+    quelle lette dal testo (`ripiego`): un turno che Gemini salta tiene la nota,
+    con l'etichetta generale della nota. Qualunque errore (rete, codice
     non 200, risposta illeggibile) lascia il livello 2 e un messaggio.
   - `notes_for_shift` dice quali note valgono per un turno (luogo con
     `_plain`, orario con `normalize_time`, giorno con `normalize_day_name`):

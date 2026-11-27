@@ -752,10 +752,11 @@ def _overlap(a, b):
 
 def apply_gemini(table, notes, result):
     """
-    Applica la risposta di Gemini alle note del livello 2. Abbina per n. Gemini può
-    solo restringere il luogo già trovato: orari (uguale, se no quelli che si
-    sovrappongono) e giorni; una lista vuota vale "nessuna restrizione". Se non
-    resta nessuna regola valida restano quelle del livello 2.
+    Applica la risposta di Gemini alle note del livello 2. Abbina per n. Le regole
+    di Gemini stanno dentro il luogo e gli orari già trovati: orari (uguale, se no
+    quelli che si sovrappongono) e giorni; una lista vuota vale "nessuna
+    restrizione". Dopo di loro restano quelle del livello 2, come ripiego per i
+    turni che Gemini non ha nominato.
     """
     times = {}
     for row in table["rows"]:
@@ -798,7 +799,10 @@ def apply_gemini(table, notes, result):
                           "orari_luogo": times.get(key, []),
                           "etichetta": rule_label if 0 < len(rule_label) <= GEMINI_LABEL_MAX else None})
         if rules:
-            note["regole"] = rules
+            # Prima le regole di Gemini (etichetta per turno), poi quelle lette dal
+            # testo come ripiego: i turni che Gemini salta tengono la nota, con
+            # l'etichetta generale.
+            note["regole"] = rules + [dict(r, etichetta=None, ripiego=True) for r in note["regole"]]
         updated.append(note)
     return updated
 
