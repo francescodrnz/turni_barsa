@@ -5,6 +5,8 @@ import glob
 from datetime import date, datetime, timedelta
 from fpdf import FPDF
 import sys
+import json
+import unicodedata
 
 DEBUG_MODE = False
 
@@ -182,6 +184,52 @@ def _legend(page, right):
     return legend
 
 
+def _notes(page, right):
+    """
+    Indicazioni della settimana: i paragrafi di testo a destra della tabella, uno
+    per riquadro (decisione 0008). Righe = parole con lo stesso top (±3 pt);
+    paragrafo = righe a meno di 8 pt l'una dall'altra. Si scartano i paragrafi
+    senza almeno 2 parole (il numero di pagina). Ritorna
+    [{"n", "testo", "pulizia", "asterisco"}]:
+    - pulizia: legenda della pulizia bagni del Castello (resa già dall'etichetta
+      ambra). Il confronto è senza spazi perché nei PDF vecchi le parole sono
+      incollate ("BAGNINUOVICASTELLO…").
+    - asterisco: note dei PDF vecchi ("*fino alle ore 15:00") che rimandano a un
+      segno nelle celle; nella tabella non c'è, quindi restano solo testo.
+    """
+    words = sorted((w for w in page.extract_words(use_text_flow=True) if w['x0'] > right),
+                   key=lambda w: (round(w['top']), w['x0']))
+    lines = []
+    for w in words:
+        if lines and abs(lines[-1]['top'] - w['top']) < 3:
+            lines[-1]['words'].append(w['text'])
+            lines[-1]['bottom'] = max(lines[-1]['bottom'], w['bottom'])
+        else:
+            lines.append({'top': w['top'], 'bottom': w['bottom'], 'words': [w['text']]})
+    paragraphs = []
+    for line in lines:
+        text = " ".join(line['words'])
+        if paragraphs and line['top'] - paragraphs[-1]['bottom'] < 8:
+            last = paragraphs[-1]
+            last['text'] += text if last['text'].endswith("-") else " " + text  # "FF-" + "258-AB"
+            last['bottom'] = line['bottom']
+        else:
+            paragraphs.append({'text': text, 'bottom': line['bottom']})
+    notes = []
+    for p in paragraphs:
+        text = re.sub(r"\s+", " ", p['text']).strip()
+        if len(re.findall(r"[^\W\d_]{2,}", text)) < 2:
+            continue
+        flat = re.sub(r"\s+", "", text).lower()
+        notes.append({
+            "n": len(notes) + 1,
+            "testo": text,
+            "pulizia": "castello" in flat and any(k in flat for k in ("bagn", "wc", "puliz")),
+            "asterisco": text.startswith("*"),
+        })
+    return notes
+
+
 def _is_legend_color(color, legend):
     """Vero se il colore è in legenda, anche in una sfumatura vicina (Excel a volte le cambia)."""
     return any(max(abs(a - b) for a, b in zip(l, color)) <= 0.1 for l in legend)
@@ -248,7 +296,9 @@ def read_shift_table(file_path):
         # basso: affidabili sono solo i bordi sinistro e superiore.
         col_lefts = [col.bbox[0] for col in table.columns] + [table.bbox[2]]
         day_x = {c: (col_lefts[c], col_lefts[c + 1]) for c in days}
-        legend = _legend(page, max(x1 for _, x1 in day_x.values()))
+        right = max(x1 for _, x1 in day_x.values())
+        legend = _legend(page, right)
+        notes = _notes(page, right)
 
         rows = []
         location = None
@@ -283,7 +333,7 @@ def read_shift_table(file_path):
     if len({r["luogo"] for r in rows if r["luogo"]}) < MIN_LOCATIONS:
         raise ValueError("Struttura del PDF non riconosciuta (bordi diversi dal solito?): "
                          "controlla la tabella a mano.")
-    return {"days": days, "rows": rows, "legenda": legend, "creato": created}
+    return {"days": days, "rows": rows, "legenda": legend, "creato": created, "indicazioni": notes}
 
 
 def _creation_date(metadata):
@@ -461,10 +511,276 @@ def sort_days(shifts):
 
     return sorted(shifts, key=lambda s: (get_day_number(s), get_time(s)))
 
+# ── Indicazioni della settimana ──────────────────────────────────────────────
+# Decisione 0008. Il testo intero va sempre nel PDF. Un'indicazione si collega ai
+# turni del primo luogo della tabella che nomina (il soggetto: "l'addetto al
+# borgia…"); con la chiave, Gemini la riassume e la restringe a orari e giorni,
+# ma solo dentro quel luogo.
+
+GENERIC_WORDS = {'giardini', 'giardino', 'stadio', 'parco', 'villa', 'viale', 'piazza', 'della',
+                 'delle', 'dello', 'degli', 'dell', 'dall', 'nell', 'sull', 'alla', 'alle', 'dalla',
+                 'nella', 'sulla', 'sede', 'turno', 'via'}
+GEMINI_DEFAULT_MODEL = "gemini-flash-latest"
+GEMINI_LABEL_MAX = 45
+
+
+def _plain(text):
+    """Minuscole, senza accenti, solo lettere e cifre separate da uno spazio."""
+    text = unicodedata.normalize("NFKD", text or "")
+    text = "".join(c for c in text if not unicodedata.combining(c)).lower()
+    return " ".join(re.findall(r"[a-z0-9]+", text))
+
+
+def _location_words(location):
+    return {w for w in _plain(location).split() if len(w) >= 4 and w not in GENERIC_WORDS}
+
+
+def _table_locations(table):
+    """Luoghi di lavoro della tabella, nell'ordine in cui compaiono (stati esclusi)."""
+    seen = []
+    for row in table["rows"]:
+        place = row["luogo"]
+        if place and not row["header"] and not is_status_location(place) and place not in seen:
+            seen.append(place)
+    return seen
+
+
+def link_notes(table):
+    """
+    Copia delle indicazioni della tabella con le regole del livello 2: ogni nota
+    che non è di pulizia né ad asterisco va sul primo luogo della tabella nominato
+    nel testo (parola intera). Ogni nota ha "regole" ([{"luogo", "orari", "giorni"}],
+    None = nessuna restrizione), "etichetta" ("Nota N"), "attiva" e "fonte".
+    """
+    words = {place: _location_words(place) for place in _table_locations(table)}
+    notes = []
+    for note in table.get("indicazioni", []):
+        note = dict(note, etichetta=f"Nota {note['n']}", attiva=True, fonte="parole", regole=[])
+        if not note["pulizia"] and not note["asterisco"]:
+            tokens = _plain(note["testo"]).split()
+            first = None
+            for place, place_words in words.items():
+                index = next((i for i, t in enumerate(tokens) if t in place_words), None)
+                if index is not None and (first is None or index < first[0]):
+                    first = (index, place)
+            if first:
+                note["regole"] = [{"luogo": first[1], "orari": None, "giorni": None}]
+        notes.append(note)
+    return notes
+
+
+def notes_for_shift(shift, notes, include_inactive=False):
+    """
+    Indicazioni attive che valgono per un turno (giorno, numero, luogo, orario, …).
+    Un orario scritto nella cella (diverso da quello della riga) vale se coincide o
+    si sovrappone a uno degli orari della regola.
+    """
+    place = _plain(shift[2])
+    time = normalize_time(shift[3])
+    day = normalize_day_name(shift[0])
+    result = []
+    for note in notes or []:
+        if not note.get("attiva", True) and not include_inactive:
+            continue
+        for rule in note.get("regole", []):
+            if _plain(rule["luogo"]) != place:
+                continue
+            if rule.get("orari"):
+                hours = [normalize_time(t) for t in rule["orari"]]
+                row_hours = {normalize_time(t) for t in rule.get("orari_luogo") or []}
+                # Un orario di riga del luogo deve coincidere; uno scritto nella cella
+                # (che Gemini non vede) basta che si sovrapponga.
+                overlaps = time and time not in row_hours and any(_overlap(time, t) for t in hours if t)
+                if time not in hours and not overlaps:
+                    continue
+            if rule.get("giorni") and day not in {normalize_day_name(d) for d in rule["giorni"]}:
+                continue
+            result.append(note)
+            break
+    return result
+
+
+def _looks_like_name(cell):
+    """Cella con una persona ("Damato", "Rizzi Salvatore"), non un segnaposto (CHIUSO, ESTERNO, *****, "addetto presso…")."""
+    low = cell.lower().strip()
+    return bool(re.search(r"[A-ZÀ-Ý][a-zà-ÿ']", cell)) and "chius" not in low and "estern" not in low \
+        and not low.startswith("add")
+
+
+def gemini_request(table, notes):
+    """
+    Testo della richiesta a Gemini (JSON): le indicazioni da etichettare e le righe
+    della tabella come luogo, orario e giorni in cui ci lavora qualcuno. Mai i nomi.
+    Ritorna None se non c'è nessuna nota da etichettare.
+    """
+    todo = [{"n": n["n"], "testo": n["testo"]} for n in notes if n["regole"]]
+    if not todo:
+        return None
+    shifts = {}
+    for row in table["rows"]:
+        place = row["luogo"]
+        if row["header"] or not place or is_status_location(place) or not row["orario"]:
+            continue
+        days = shifts.setdefault((place, row["orario"]), set())
+        for col, (day, _) in table["days"].items():
+            if _looks_like_name(row["celle"][col]):
+                days.add(DAY_NAMES.index(day) if day in DAY_NAMES else 9)
+    rows = [{"luogo": place, "orario": time,
+             "giorni": [format_day_for_display(DAY_NAMES[d]) for d in sorted(days) if d < 7]}
+            for (place, time), days in shifts.items()]
+    return json.dumps({"indicazioni": todo, "turni": rows}, ensure_ascii=False)
+
+
+GEMINI_PROMPT = """Sei l'assistente di un servizio di custodia di parchi e strutture.
+Ricevi le indicazioni settimanali scritte dal responsabile e l'elenco dei turni
+(luogo, orario, giorni in cui c'è qualcuno). Per ogni indicazione rispondi con:
+- n: il numero dell'indicazione;
+- etichetta: un riassunto in italiano di al massimo 5-6 parole (massimo 45
+  caratteri) di cosa deve fare chi è di turno, da mettere accanto al turno
+  (es. "Apri e chiudi giardini Manzoni");
+- turni: a chi è rivolta, cioè l'addetto che deve fare la cosa (il soggetto),
+  non i luoghi solo citati. Usa esattamente i nomi di luogo e gli orari
+  dell'elenco. Lascia orario vuoto se vale per tutti i turni del luogo e giorni
+  vuoto se vale per tutti i giorni.
+
+Dati:
+"""
+
+
+def gemini_notes(request_json, api_key, model=None):
+    """
+    Chiama Gemini (REST generateContent) e ritorna la lista che ha risposto.
+    Solleva su qualunque problema: rete, timeout, codice diverso da 200, risposta
+    senza testo o JSON non valido. Il ripiego lo fa chi chiama.
+    """
+    import requests  # solo qui: parser e PDF non ne hanno bisogno
+    day_enum = [format_day_for_display(d) for d in DAY_NAMES]
+    schema = {"type": "ARRAY", "items": {"type": "OBJECT", "required": ["n", "etichetta", "turni"], "properties": {
+        "n": {"type": "INTEGER"},
+        "etichetta": {"type": "STRING"},
+        "turni": {"type": "ARRAY", "items": {"type": "OBJECT", "required": ["luogo"], "properties": {
+            "luogo": {"type": "STRING"},
+            "orario": {"type": "STRING"},
+            "giorni": {"type": "ARRAY", "items": {"type": "STRING", "enum": day_enum}},
+        }}},
+    }}}
+    response = requests.post(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model or GEMINI_DEFAULT_MODEL}:generateContent",
+        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+        json={"contents": [{"role": "user", "parts": [{"text": GEMINI_PROMPT + request_json}]}],
+              "generationConfig": {"temperature": 0, "responseMimeType": "application/json",
+                                   "responseSchema": schema}},
+        timeout=20,
+    )
+    if response.status_code != 200:
+        try:
+            detail = response.json()["error"]["message"]
+        except Exception:
+            detail = response.text[:200]
+        raise RuntimeError(f"Gemini ha risposto {response.status_code}: {detail}")
+    data = response.json()
+    try:
+        text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
+        result = json.loads(text)
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        raise RuntimeError(f"Risposta di Gemini non leggibile ({e})") from e
+    if not isinstance(result, list):
+        raise RuntimeError("Risposta di Gemini non leggibile (non è una lista)")
+    return result
+
+
+def _overlap(a, b):
+    """Vero se due orari HH:MM-HH:MM si sovrappongono in senso stretto (06-12 e 12-18 no)."""
+    (a0, a1), (b0, b1) = _time_key(a), _time_key(b)
+    return a0 < b1 and b0 < a1
+
+
+def apply_gemini(table, notes, result):
+    """
+    Applica la risposta di Gemini alle note del livello 2. Abbina per n. Gemini può
+    solo restringere il luogo già trovato: orari (uguale, se no quelli che si
+    sovrappongono) e giorni; una lista vuota vale "nessuna restrizione". Se non
+    resta nessuna regola valida restano quelle del livello 2.
+    """
+    times = {}
+    for row in table["rows"]:
+        if row["luogo"] and not row["header"] and row["orario"]:
+            times.setdefault(_plain(row["luogo"]), [])
+            if row["orario"] not in times[_plain(row["luogo"])]:
+                times[_plain(row["luogo"])].append(row["orario"])
+    answers = {}
+    for item in result:
+        if isinstance(item, dict) and isinstance(item.get("n"), int):
+            answers.setdefault(item["n"], item)
+    updated = []
+    for note in notes:
+        answer = answers.get(note["n"])
+        if not answer or not note["regole"]:
+            updated.append(note)
+            continue
+        note = dict(note, fonte="gemini")
+        label = str(answer.get("etichetta") or "").strip()
+        if 0 < len(label) <= GEMINI_LABEL_MAX:
+            note["etichetta"] = label
+        allowed = {_plain(r["luogo"]): r["luogo"] for r in note["regole"]}
+        rules = []
+        for turn in answer.get("turni") or []:
+            if not isinstance(turn, dict) or _plain(str(turn.get("luogo", ""))) not in allowed:
+                continue
+            key = _plain(turn["luogo"])
+            hours = None
+            wanted = normalize_time(str(turn.get("orario") or ""))
+            if wanted:
+                known = times.get(key, [])
+                hours = [wanted] if wanted in known else [t for t in known if _overlap(wanted, t)]
+            days = [normalize_day_name(str(d)) for d in turn.get("giorni") or []]
+            days = [d for d in days if d in DAY_NAMES]
+            rules.append({"luogo": allowed[key], "orari": hours or None, "giorni": days or None,
+                          "orari_luogo": times.get(key, [])})
+        if rules:
+            note["regole"] = rules
+        updated.append(note)
+    return updated
+
+
+def notes_with_labels(table, api_key=None, model=None, call=None):
+    """
+    Indicazioni con regole ed etichette, e un messaggio sulla fonte. Senza chiave o
+    con un errore di Gemini restano le etichette "Nota N" del primo luogo nominato.
+    call(request_json, api_key, model) sostituisce gemini_notes (l'app ci mette la cache).
+    """
+    notes = link_notes(table)
+    request_json = gemini_request(table, notes)
+    if request_json is None:
+        return notes, "Nessuna indicazione da collegare ai turni."
+    if not api_key:
+        return notes, "Etichette \"Nota N\" dal primo luogo nominato: chiave Gemini non impostata."
+    try:
+        result = (call or gemini_notes)(request_json, api_key, model)
+        labeled = apply_gemini(table, notes, result)
+    except Exception as e:
+        return notes, f"Etichette \"Nota N\" dal primo luogo nominato: Gemini non disponibile ({e})."
+    if not any(n["fonte"] == "gemini" for n in labeled):
+        return notes, "Etichette \"Nota N\" dal primo luogo nominato: Gemini non ha dato etichette utilizzabili."
+    return labeled, "Etichette e collegamenti da Gemini."
+
+
+def readable_note(text):
+    """Un testo scritto tutto in maiuscolo diventa minuscolo con l'iniziale maiuscola."""
+    letters = [c for c in text if c.isalpha()]
+    if not letters or sum(c.isupper() for c in letters) < 0.8 * len(letters):
+        return text
+    text = re.sub(r"(^|[.!?]\s+)(\W*)(\w)", lambda m: m[1] + m[2] + m[3].upper(), text.lower())
+    text = re.sub(r"\bwc\b", "WC", text)
+    text = re.sub(r"\bn\.b\.\)?\s*(\w)", lambda m: m[0][:-1].upper() + m[1].upper(), text, flags=re.IGNORECASE)
+    return text
+
+
 # ── PDF generato ─────────────────────────────────────────────────────────────
-# Layout scelto nella decisione 0007: striscia dei sette giorni in alto, poi un
-# blocco per giorno con orari e luoghi. Si misura il corpo a scala 1 e poi lo si
-# ridisegna ingrandito (fino a PDF_MAX_SCALE) o rimpicciolito per riempire una pagina.
+# Layout delle decisioni 0007 e 0008: nome e striscia compatta dei sette giorni in
+# alto, un blocco per giorno con orari, luoghi ed etichette, poi le indicazioni a
+# dimensione fissa. Il corpo prende l'altezza che resta: la scala (fra
+# PDF_MIN_SCALE e PDF_MAX_SCALE) si cerca ridisegnando su una pagina di prova.
 
 FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 PDF_FONTS = {"regular": "Inter-Regular", "italic": "Inter-Italic", "semibold": "Inter-SemiBold",
@@ -593,62 +909,106 @@ class _ShiftsPDF(FPDF):
         else:
             self.set_text_shaping(False)
 
-    def pill(self, x, top, s, size, height):
-        self.use("semibold", size, AMBER)
-        width = self.get_string_width(s) + 6
-        self.set_fill_color(*AMBER_SOFT)
+    def _fit_label(self, s, size, max_width):
+        """Carattere e testo dell'etichetta che stanno in max_width (fino al 75%, poi "…")."""
+        current = size
+        self.set_font("semibold", "", current)
+        while self.get_string_width(s) > max_width and current > size * 0.75:
+            current -= 0.25
+            self.set_font("semibold", "", current)
+        while self.get_string_width(s) > max_width and len(s) > 4:
+            s = s[:-2].rstrip() + "…"
+        return s, current
+
+    def pill_width(self, s, size, height, number=None):
+        self.set_font("semibold", "", size)
+        return self.get_string_width(s) + 6 + (height - 0.4 if number else 0)
+
+    def pill(self, x, top, s, size, height, fill=AMBER_SOFT, ink=AMBER, number=None, max_width=None):
+        """Etichetta arrotondata; con number, un pallino col numero dell'indicazione davanti."""
+        dot = height - 1.6 if number else 0
+        pad = dot + 1.2 if number else 0
+        if max_width:
+            s, size = self._fit_label(s, size, max_width - 6 - pad)
+        self.use("semibold", size, ink)
+        width = self.get_string_width(s) + 6 + pad
+        self.set_fill_color(*fill)
         self.rect(x, top, width, height, style="F", round_corners=True, corner_radius=height / 2)
-        self.text(x + 3, top + height / 2 + size * 0.127, s)
+        if number:
+            self.badge(x + 0.8, top + 0.8, number, dot, ink)
+            self.use("semibold", size, ink)
+        self.text(x + 3 + pad, top + height / 2 + size * 0.127, s)
+        return width
+
+    def badge(self, x, top, number, d, ink):
+        """Pallino pieno col numero dell'indicazione."""
+        self.set_fill_color(*ink)
+        self.ellipse(x, top, d, d, style="F")
+        size = d * 1.75
+        self.use("bold", size, WHITE)
+        s = str(number)
+        self.text(x + (d - self.get_string_width(s)) / 2, top + d / 2 + size * 0.125, s)
 
 
-def _pdf_header(pdf, name, period):
+def _pdf_header(pdf, name, period, days):
+    """Titolo, nome e periodo a sinistra; a destra la striscia compatta dei sette giorni."""
     left = PDF_MARGIN
-    pdf.write_at(left, 22, "TURNI DI LAVORO", "semibold", 9.5, ACCENT, spacing=1.2)
-    pdf.write_fit(left, 34, name, "display", 26, INK, PAGE_W - 2 * left)
+    box_w, gap, box_h, top = 11.6, 1.4, 22, 12
+    strip_x = PAGE_W - PDF_MARGIN - (7 * box_w + 6 * gap)
+    text_w = strip_x - left - 5
+    pdf.write_at(left, 18, "TURNI DI LAVORO", "semibold", 8.5, ACCENT, spacing=1.2)
+    pdf.write_fit(left, 28.5, name, "display", 22, INK, text_w)
     if period:
-        pdf.write_at(left, 43, period[0].upper() + period[1:], "regular", 14, MUTED)
-        return 52
-    return 44
-
-
-def _pdf_body(pdf, days, y, k):
-    """Striscia della settimana ed elenco dei giorni a scala k; ritorna la y finale."""
-    left, width = PDF_MARGIN, PAGE_W - 2 * PDF_MARGIN
-    gap = 2.5
-    box_w = (width - 6 * gap) / 7
-    box_h = 25 * k
+        pdf.write_fit(left, 36, period[0].upper() + period[1:], "regular", 11.5, MUTED, text_w)
+    short = {"Notte": "Notte", "Mattina": "Matt.", "Pomeriggio": "Pom."}
     by_index = {d[0]: d for d in days}
     for index in range(7):
-        x = left + index * (box_w + gap)
+        x = strip_x + index * (box_w + gap)
         day = by_index.get(index)
         if day is None:  # giorno senza righe (tolte a mano): solo il nome
             pdf.set_draw_color(*LINE)
             pdf.set_line_width(0.3)
-            pdf.rect(x, y, box_w, box_h, style="D", round_corners=True, corner_radius=2.5)
-            pdf.write_at(x, y + 6 * k, DAY_NAMES[index][:3].upper(), "semibold", 8.5 * k, FAINT, "C", box_w, 0.8)
+            pdf.rect(x, top, box_w, box_h, style="D", round_corners=True, corner_radius=2)
+            pdf.write_at(x, top + 4.6, DAY_NAMES[index][:3].upper(), "semibold", 6.5, FAINT, "C", box_w, 0.5)
             continue
-        _, name, number, rows, absence = day
+        _, day_name, number, rows, absence = day
         if absence:
             pdf.set_draw_color(*LINE)
-            pdf.set_line_width(0.4)
+            pdf.set_line_width(0.35)
             pdf.set_fill_color(*WHITE)
-            pdf.rect(x, y, box_w, box_h, style="DF", round_corners=True, corner_radius=2.5)
+            pdf.rect(x, top, box_w, box_h, style="DF", round_corners=True, corner_radius=2)
             label_color = number_color = MUTED
             labels = [absence.split(" - ")[0]]  # "Riposo - <luogo> (chiuso)": il luogo è nell'elenco
         else:
             pdf.set_fill_color(*STRIP_FILL)
-            pdf.rect(x, y, box_w, box_h, style="F", round_corners=True, corner_radius=2.5)
+            pdf.rect(x, top, box_w, box_h, style="F", round_corners=True, corner_radius=2)
             label_color, number_color = STRIP_TEXT, INK
             parts = set().union(*(parts_of_day(r[1]) for r in rows if not is_status_location(r[0])))
-            labels = [p for p in ("Notte", "Mattina", "Pomeriggio") if p in parts]
-        pdf.write_at(x, y + 6 * k, name[:3].upper(), "semibold", 8.5 * k, label_color, "C", box_w, 0.8)
-        pdf.write_at(x, y + 13.5 * k, number, "display", 16 * k, number_color, "C", box_w)
-        label_y = y + {0: 0, 1: 20.2, 2: 18.6, 3: 17.2}[len(labels)] * k
+            labels = [short[p] for p in ("Notte", "Mattina", "Pomeriggio") if p in parts]
+        pdf.write_at(x, top + 4.6, day_name[:3].upper(), "semibold", 6.5, label_color, "C", box_w, 0.5)
+        pdf.write_at(x, top + 11, number, "display", 12, number_color, "C", box_w)
+        label_y = top + {0: 0, 1: 17.2, 2: 15.6, 3: 14.4}[len(labels)]
         for label in labels:
-            pdf.write_fit(x, label_y, label, "semibold", 7.8 * k, label_color, box_w - 2, 0.6, "C", box_w)
-            label_y += 3.6 * k
-    y += box_h + 7 * k
+            pdf.write_fit(x, label_y, label, "semibold", 6, label_color, box_w - 1.5, 0.6, "C", box_w)
+            label_y += 3
+    return top + box_h + 7
 
+
+def _row_pills(index, number, place, time, cleaning, notes):
+    """Etichette di una riga: pulizia bagni (ambra) e indicazioni (col loro colore e numero)."""
+    pills = []
+    label = _cleaning_label(cleaning)
+    if label:
+        pills.append((label, AMBER_SOFT, AMBER, None))
+    for note in notes_for_shift((DAY_NAMES[index], number, place, time), notes):
+        pills.append((note["etichetta"], *note["colori"], note["n"]))
+    return pills
+
+
+def _pdf_body(pdf, days, notes, y, k):
+    """Elenco dei giorni a scala k; ritorna la y finale. Le etichette vanno accanto al
+    luogo se ci stanno tutte sulla stessa riga, altrimenti sotto, una per riga."""
+    left, width = PDF_MARGIN, PAGE_W - 2 * PDF_MARGIN
     size = 12 * k
     pdf.set_font("semibold", "", size)
     pdf.tabular(True)
@@ -657,7 +1017,8 @@ def _pdf_body(pdf, days, y, k):
     x_time = left + 40 * k
     x_place = x_time + time_w + 6 * k
     place_w = left + width - x_place
-    for _, name, number, rows, absence in days:
+    pill_size, pill_h, pill_gap = 9 * k, 6 * k, 2.5 * k
+    for index, name, number, rows, absence in days:
         pdf.write_at(left, y + 6 * k, f"{name} {number}", "bold", size, FAINT if absence else INK)
         if absence:
             pdf.write_fit(x_time, y + 6 * k, absence, "italic", size, MUTED, left + width - x_time)
@@ -666,16 +1027,27 @@ def _pdf_body(pdf, days, y, k):
             for place, time, cleaning in rows:
                 if is_status_location(place):  # es. permesso in un giorno di lavoro
                     pdf.write_fit(x_place, y + 6 * k, place, "italic", size, MUTED, place_w)
+                    y += 8.5 * k
+                    continue
+                pdf.tabular(True)
+                pdf.write_at(x_time, y + 6 * k, time.replace("-", " – ") if time else "—", "semibold", size, INK)
+                pdf.tabular(False)
+                pills = _row_pills(index, number, place, time, cleaning, notes)
+                pdf.set_font("regular", "", size)
+                place_text_w = pdf.get_string_width(place)
+                inline_w = sum(pdf.pill_width(p[0], pill_size, pill_h, p[3]) + pill_gap for p in pills)
+                if pills and place_text_w + 3 * k + inline_w <= place_w:
+                    pdf.write_at(x_place, y + 6 * k, place, "regular", size, INK)
+                    x = x_place + place_text_w + 3 * k
+                    for label, fill, ink, n in pills:
+                        x += pdf.pill(x, y + 1.6 * k, label, pill_size, pill_h, fill, ink, n) + pill_gap
+                    y += 8.5 * k
                 else:
-                    pdf.tabular(True)
-                    pdf.write_at(x_time, y + 6 * k, time.replace("-", " – ") if time else "—", "semibold", size, INK)
-                    pdf.tabular(False)
                     pdf.write_fit(x_place, y + 6 * k, place, "regular", size, INK, place_w)
-                y += 8.5 * k
-                label = _cleaning_label(cleaning)
-                if label:
-                    pdf.pill(x_place, y - 0.5 * k, label, 9.5 * k, 6 * k)
-                    y += 7 * k
+                    y += 8.5 * k
+                    for label, fill, ink, n in pills:
+                        pdf.pill(x_place, y - 0.5 * k, label, pill_size, pill_h, fill, ink, n, place_w)
+                        y += 7 * k
             y += 1.5 * k
         pdf.set_draw_color(*LINE)
         pdf.set_line_width(0.3)
@@ -684,21 +1056,94 @@ def _pdf_body(pdf, days, y, k):
     return y
 
 
-def write_shifts_to_pdf(shifts, out_path, surname, period=None):
-    """PDF di una pagina con i turni della settimana; period è il testo di week_period."""
+NOTE_COLORS = [((219, 234, 254), (30, 64, 175)), ((220, 252, 231), (22, 101, 52)),
+               ((237, 233, 254), (91, 33, 182)), ((252, 231, 243), (157, 23, 77)),
+               ((204, 251, 241), (17, 94, 89)), ((241, 245, 249), (51, 65, 85))]
+NOTE_SIZE_MINE = 9
+NOTE_SIZES_OTHER = (7.5, 7, 6.5)
+PDF_MIN_SCALE = 0.6
+
+
+def _pdf_notes(pdf, mine, others, y, other_size):
+    """Indicazioni a dimensione fissa: prima quelle dei tuoi turni, poi le altre in grigio."""
+    left, width = PDF_MARGIN, PAGE_W - 2 * PDF_MARGIN
+    for title, items, size, color, title_color in (
+            ("INDICAZIONI PER I TUOI TURNI", mine, NOTE_SIZE_MINE, INK, ACCENT),
+            ("ALTRE INDICAZIONI DELLA SETTIMANA", others, other_size, MUTED, MUTED)):
+        if not items:
+            continue
+        pdf.write_at(left, y + 4, title, "semibold", 7.5, title_color, spacing=1.0)
+        y += 7
+        dot = size * 0.5
+        for note in items:
+            pdf.badge(left, y + 0.3, note["n"], dot, note["colori"][1])
+            pdf.use("regular", size, color)
+            pdf.set_xy(left + dot + 2.5, y)
+            pdf.multi_cell(width - dot - 2.5, size * 0.43, readable_note(note["testo"]), align="L")
+            y = pdf.get_y() + 2.2
+        y += 1
+    return y
+
+
+def _split_notes(days, notes):
+    """Colori alle indicazioni, e divisione fra quelle dei turni della persona e le altre."""
+    colored, i = [], 0
+    for note in notes or []:
+        if note.get("pulizia"):
+            colors = (AMBER_SOFT, AMBER)
+        else:
+            colors = NOTE_COLORS[i % len(NOTE_COLORS)]
+            i += 1
+        colored.append(dict(note, colori=colors))
+    linked = set()
+    has_cleaning = False
+    for index, _, number, rows, _ in days:
+        for place, time, cleaning in rows:
+            shift = (DAY_NAMES[index], number, place, time)
+            linked |= {n["n"] for n in notes_for_shift(shift, colored, include_inactive=True)}
+            has_cleaning = has_cleaning or bool(_cleaning_label(cleaning))
+    mine = [n for n in colored if n["n"] in linked or (has_cleaning and n.get("pulizia"))]
+    others = [n for n in colored if n not in mine]
+    return colored, mine, others
+
+
+def write_shifts_to_pdf(shifts, out_path, surname, period=None, notes=None):
+    """
+    PDF di una pagina con i turni della settimana e le indicazioni (decisioni 0007 e
+    0008); period è il testo di week_period, notes quello di notes_with_labels.
+    Ritorna (percorso, avviso): l'avviso è None, oppure dice che il contenuto non
+    sta nella pagina nemmeno alla scala minima.
+    """
     days = _days_for_pdf(shifts)
+    notes, mine, others = _split_notes(days, notes)
     name = " ".join(w[:1].upper() + w[1:] for w in surname.split())
     pdf = _ShiftsPDF()
     pdf.add_page()
-    top = _pdf_header(pdf, name, period)
+    top = _pdf_header(pdf, name, period, days)
     probe = _ShiftsPDF()
     probe.add_page()
-    height = _pdf_body(probe, days, top, 1.0) - top
-    scale = min(PDF_MAX_SCALE, (PAGE_H - PDF_MARGIN - top) / height)
-    _pdf_body(pdf, days, top, scale)
+    bottom = PAGE_H - PDF_MARGIN
+    warning = None
+    for other_size in NOTE_SIZES_OTHER:
+        notes_h = _pdf_notes(probe, mine, others, 0, other_size) + 3 if notes else 0
+        if _pdf_body(probe, days, notes, top, PDF_MIN_SCALE) <= bottom - notes_h:
+            break
+    else:
+        warning = "Turni e indicazioni non stanno in una pagina: controlla il fondo del PDF."
+    if _pdf_body(probe, days, notes, top, PDF_MAX_SCALE) <= bottom - notes_h:
+        scale = PDF_MAX_SCALE
+    else:  # dove vanno le etichette dipende dalla scala: si cerca per bisezione
+        low, high = PDF_MIN_SCALE, PDF_MAX_SCALE
+        for _ in range(12):
+            mid = (low + high) / 2
+            low, high = (mid, high) if _pdf_body(probe, days, notes, top, mid) <= bottom - notes_h else (low, mid)
+        scale = low
+    y = _pdf_body(pdf, days, notes, top, scale)
+    if notes:
+        _pdf_notes(pdf, mine, others, y + 3, other_size)
     pdf.output(out_path)
     print(f"File '{out_path}' creato con successo!")
-    return out_path
+    return out_path, warning
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -773,7 +1218,11 @@ def main():
     shifts_sorted = sort_days(shifts)
     print_shifts(shifts_sorted)
 
-    write_shifts_to_pdf(shifts_sorted, output_filename(table, surname), surname, week_period(table))
+    notes, source = notes_with_labels(table, os.environ.get("GEMINI_API_KEY"), os.environ.get("GEMINI_MODEL"))
+    print(source)
+    _, warning = write_shifts_to_pdf(shifts_sorted, output_filename(table, surname), surname, week_period(table), notes)
+    if warning:
+        print(f"ATTENZIONE: {warning}")
     input("Premi Invio per uscire...")
 
 if __name__ == "__main__":

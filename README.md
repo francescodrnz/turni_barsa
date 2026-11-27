@@ -59,12 +59,41 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
 - Le celle unite allargano verso destra e verso il basso i bbox di righe e
   colonne di pdfplumber: per trovare una cella si usano solo i bordi sinistro
   e superiore (`col.bbox[0]`, `row.bbox[1]`).
-- **PDF generato** (decisione 0007): `write_shifts_to_pdf(turni, percorso,
-  cognome, periodo)` scrive una pagina A4 con fpdf2 e il carattere Inter di
-  `fonts/`. In alto "Turni di lavoro", il nome e il periodo (`week_period`:
-  "dal 12 al 18 agosto 2026", stessa fonte di `output_filename`; mese e anno
-  del primo giorno solo se cambiano). Sotto, la striscia dei sette giorni:
-  riquadro chiaro con Notte/Mattina/Pomeriggio (`parts_of_day`: Notte se il
+- **Indicazioni della settimana** (decisione 0008): `_notes` legge i
+  paragrafi di testo a destra della tabella, uno per riquadro (righe con lo
+  stesso top ±3 pt, paragrafi a meno di 8 pt; scarta quelli con meno di 2
+  parole, cioè il numero di pagina; una riga che finisce con "-" si unisce
+  senza spazio). Finiscono in `table["indicazioni"]` con `n`, `testo`,
+  `pulizia` (il testo senza spazi contiene "castello" e "bagn"/"wc"/"puliz":
+  è la legenda della pulizia, resa già dall'etichetta ambra) e `asterisco`
+  (comincia con "*": note dei PDF vecchi che rimandano a segni che nella
+  tabella non ci sono). Tre livelli:
+  - il testo intero va sempre nel PDF;
+  - `link_notes`: una nota che non è di pulizia né ad asterisco va sul
+    **primo** luogo della tabella che nomina (il soggetto, "l'addetto al
+    borgia…"), confrontando le parole del nome del luogo (`_location_words`:
+    almeno 4 lettere, senza `GENERIC_WORDS`) con il testo, entrambi passati per
+    `_plain` (minuscole, senza accenti). Etichetta "Nota N". I luoghi citati
+    dopo ("…aprire i giardini di viale Manzoni") non contano;
+  - `notes_with_labels`: se c'è la chiave, `gemini_notes` chiama Gemini
+    (REST, `requests` importato solo lì) con le note e le righe della tabella
+    come luogo, orario e giorni in cui la cella sembra un nome
+    (`_looks_like_name`), **mai i nomi**. `apply_gemini` abbina per `n`, prende
+    l'etichetta (max 45 caratteri) e restringe le regole dentro il luogo del
+    livello 2: orario uguale, altrimenti quelli che si sovrappongono in senso
+    stretto; giorni con `normalize_day_name`; liste vuote = nessuna
+    restrizione. Gemini non aggiunge luoghi. Qualunque errore (rete, codice
+    non 200, risposta illeggibile) lascia il livello 2 e un messaggio.
+  - `notes_for_shift` dice quali note valgono per un turno (luogo con
+    `_plain`, orario con `normalize_time`, giorno con `normalize_day_name`):
+    si calcola al momento del PDF, quindi segue le correzioni di Modifica turni.
+- **PDF generato** (decisioni 0007 e 0008): `write_shifts_to_pdf(turni,
+  percorso, cognome, periodo, indicazioni)` scrive una pagina A4 con fpdf2 e il
+  carattere Inter di `fonts/` e ritorna `(percorso, avviso)`. In alto "Turni di
+  lavoro", il nome e il periodo (`week_period`: "dal 12 al 18 agosto 2026",
+  stessa fonte di `output_filename`; mese e anno del primo giorno solo se
+  cambiano); accanto, a destra, la striscia compatta dei sette giorni:
+  riquadro chiaro con Notte/Matt./Pom. (`parts_of_day`: Notte se il
   turno comincia prima delle 5, Mattina se prima delle 12, Pomeriggio se
   finisce dopo le 16 o comincia da mezzogiorno) oppure bianco col nome
   dell'assenza; un giorno senza righe ha il riquadro vuoto. Poi l'elenco: un
@@ -72,10 +101,19 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   con le cifre tabulari di Inter (`tnum`, richiede `uharfbuzz`) così stanno in
   colonna; un giorno fatto solo di stati (`is_status_location`) è un'assenza in
   grigio, uno stato in un giorno di lavoro è una riga in corsivo. La pulizia
-  bagni è un'etichetta ambra sotto il luogo ("alle 19:00", "di mattina";
-  niente per "No" o vuoto, il testo così com'è per un valore scritto a mano).
-  Il corpo si misura a scala 1 e si ridisegna con la scala che riempie la
-  pagina (al massimo 1,45): sempre una pagina sola.
+  bagni è un'etichetta ambra ("alle 19:00", "di mattina"; niente per "No" o
+  vuoto, il testo così com'è per un valore scritto a mano); ogni indicazione
+  attiva del turno è un'etichetta col suo colore (`NOTE_COLORS`) e il suo
+  numero. Le etichette vanno accanto al luogo se ci stanno tutte sulla stessa
+  riga, altrimenti sotto, una per riga, rimpicciolite fino al 75% e poi
+  accorciate con "…". In fondo le indicazioni per intero (`readable_note`
+  riporta in minuscolo i testi tutti maiuscoli): prima "per i tuoi turni"
+  (collegate ai turni della persona, più quelle di pulizia se ha una pulizia),
+  poi "altre" più piccole e in grigio. Le indicazioni hanno dimensione fissa;
+  il corpo prende l'altezza che resta, con la scala più grande fra 0,6 e 1,45
+  trovata per bisezione su una pagina di prova (dove vanno le etichette dipende
+  dalla scala). Se non basta, le "altre" scendono fino a 6,5 pt; se non basta
+  ancora, l'avviso.
 - `output_filename` dà il nome del file, `Turni <cognome> dal 09 al 15
   novembre.pdf`, senza guardare il nome del PDF di partenza. Giorni e numeri
   vengono dall'intestazione della tabella; mese e anno dalla data più vicina
@@ -98,6 +136,14 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   elaborazione. Si fanno nella tabella modificabile con "Salva modifiche e
   rigenera PDF", oppure con il form "Aggiungi un nuovo turno". Vivono nella
   sessione e si perdono ricaricando la pagina.
+- Indicazioni: al Genera turni `notes_with_labels` con la chiave di
+  `gemini_settings` (`st.secrets`, dentro `try` perché senza `secrets.toml`
+  solleva) e `cached_gemini` (`st.cache_data`: in cache solo le risposte
+  riuscite, perché gli errori sollevano).
+- Tab *Indicazioni*: la fonte delle etichette, poi una tabella con N, Attiva,
+  Etichetta (modificabili le ultime due), i turni a cui va e il testo. "Salva
+  indicazioni e rigenera PDF" cambia solo etichetta e Attiva; vale per la
+  sessione, come Modifica turni.
 - Tab *Lettura PDF*: per ogni riga del PDF, etichetta del blocco, luogo e
   orario assegnati e nomi (`table_debug_rows`). Serve a capire se un turno
   sbagliato viene da una lettura sbagliata.
@@ -112,12 +158,19 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
 - **In locale**: il `.venv` del repo è creato con `uv` e non ha `pip`; i
   pacchetti si installano con `uv pip install -p .venv/bin/python -r
   requirements.txt`. Per il solo parser e il PDF bastano `pdfplumber`, `fpdf2` e
-  `uharfbuzz`; la vecchia `fpdf` va tolta (`uv pip uninstall -p
+  `uharfbuzz` (`requests` solo per Gemini); la vecchia `fpdf` va tolta (`uv pip uninstall -p
   .venv/bin/python fpdf`) perché usa lo stesso nome di modulo. Si lancia `main.py` da una cartella che contiene il PDF: il
   programma propone tutti i PDF della cartella tranne quelli che iniziano con
   "Turni ", chiede il cognome, stampa avvisi e turni e scrive il PDF nella
   cartella corrente.
 - **In locale, app**: dopo i requisiti, `.venv/bin/streamlit run app.py`.
+- **Chiave Gemini** (facoltativa; senza, le etichette sono "Nota N"): si crea
+  gratis su Google AI Studio. Su Streamlit Cloud: Manage app → Settings →
+  Secrets, una riga `GEMINI_API_KEY = "..."` (e se serve `GEMINI_MODEL`,
+  default `gemini-flash-latest`). In locale per l'app:
+  `.streamlit/secrets.toml` con la stessa riga (escluso da git); per la CLI:
+  `export GEMINI_API_KEY=...`. Gemini viene chiamato una volta per testo delle
+  indicazioni, poi la risposta resta in cache fino al riavvio dell'app.
 
 Dopo una modifica al parser si rigenerano i turni di Crudele Francesco
 sull'ultimo PDF, si confrontano a occhio con la tabella originale e si lancia
@@ -152,7 +205,29 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
   0,3 s e 26 KB per PDF. `week_period` uguale al nome del file su 18 PDF, anche
   a cavallo d'anno ("dal 29 dicembre 2025 al 4 gennaio 2026").
 
+- 2026-11-27, indicazioni (0008) su `pdf_turni/`: sett. 49, 48, 47 5 note
+  (2 di pulizia), 44 e 02-08 4-5; nei PDF fino a maggio 2026 solo note ad
+  asterisco e legenda. Collegamenti: sulla 49 Crudele ha la nota del Puttilli
+  sui 3 turni al Puttilli e quella del Simeone sul giovedì al Chieffi;
+  Venanzio quella del Borgia sui 4 Borgia; nella 02-08 Rizzi Salvatore al
+  Manzoni (mar 03) non prende la nota del Borgia. Turni di tutte le 359
+  persone dei 22 PDF identici a prima. PDF: una pagina ed entro i margini su
+  tutto `pdf_turni/` per Crudele, sulle persone di prova e con un'etichetta di
+  45 caratteri; 0,3-0,6 s per PDF.
+
 ## Limiti e comportamenti noti
+- **Indicazioni**: una nota va solo sul primo luogo che nomina con una parola
+  del suo nome ("borgia", "puttilli", "simeone"); se lo chiama in un altro modo
+  non ha etichette, nemmeno con Gemini, ma il testo c'è sempre in fondo al PDF.
+  Una nota il cui soggetto viene dopo un altro luogo ("i giardini di via X
+  saranno aperti dall'addetto al Y") va sul luogo sbagliato: si toglie
+  l'etichetta nella tab Indicazioni (Attiva). Le note ad asterisco e i pezzi
+  staccati della legenda invernale ("2°PASSAGGIO ORE 19:00") restano solo
+  testo. A Gemini vanno le indicazioni (che contengono la targa del Doblò) e
+  luoghi e orari della tabella, mai i nomi; con la chiave gratuita Google può
+  usarli per migliorare i suoi prodotti. Il piano gratuito ha pochi accessi al
+  giorno: con un errore (429) restano le etichette "Nota N" e il messaggio
+  nella tab, e alla generazione dopo si riprova.
 - **PDF generato, testi lunghi**: un luogo che non sta nello spazio si
   rimpicciolisce fino al 75% e poi si accorcia con "…"; nel riquadro della
   striscia "Riposo - <luogo> (chiuso)" diventa "Riposo". Un orario che non è
@@ -240,11 +315,31 @@ for r in t['rows']:
     if r['luogo'] and 'castello' in r['luogo'].lower():
         print(r['orario'], {t['days'][c][0]: (r['celle'][c], r['colori'][c]) for c in t['days'] if r['colori'][c]})" "file.pdf"
 
+# Indicazioni di ogni PDF (P = pulizia, * = ad asterisco) e luogo a cui vanno
+.venv/bin/python -c "
+import main, glob
+for p in sorted(glob.glob('pdf_turni/*.pdf')):
+    try: t = main.read_shift_table(p)
+    except ValueError as e: print('ERRORE', p, e); continue
+    print(p)
+    for n in main.link_notes(t):
+        print('  ', n['n'], 'P' if n['pulizia'] else '*' if n['asterisco'] else ' ',
+              [r['luogo'] for r in n['regole']], n['testo'][:70])"
+
+# Etichette di Gemini per un PDF (chiave nell'ambiente)
+GEMINI_API_KEY=... .venv/bin/python -c "
+import main, os, sys
+notes, msg = main.notes_with_labels(main.read_shift_table(sys.argv[1]), os.environ['GEMINI_API_KEY'])
+print(msg); [print(n['n'], n['etichetta'], n['regole']) for n in notes]" "file.pdf"
+
 # App in locale
 uv pip install -p .venv/bin/python -r requirements.txt && .venv/bin/streamlit run app.py
 ```
 
 ## Decisioni collegate
+- [0008](decisioni/0008-indicazioni-della-settimana.md) — Indicazioni della
+  settimana nel PDF: testo intero, etichetta sul primo luogo nominato, Gemini
+  facoltativo per riassumere e restringere.
 - [0007](decisioni/0007-layout-pdf-generato.md) — Layout del PDF generato:
   striscia della settimana più elenco dei giorni, con fpdf2 e Inter.
 - [0006](decisioni/0006-pulizia-bagni-dall-orario.md) — Pulizia bagni: la

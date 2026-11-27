@@ -11,6 +11,10 @@ from main import (
     table_debug_rows,
     output_filename,
     week_period,
+    notes_with_labels,
+    gemini_notes,
+    readable_note,
+    format_day_for_display as _day,
 )
 import tempfile
 import os
@@ -318,6 +322,10 @@ def init_session_state():
         'table': None,
         'warnings': [],
         'last_processed_key': None,
+        'notes': None,
+        'notes_source': "",
+        'pdf_warning': None,
+        'notes_run': 0,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -351,13 +359,46 @@ def df_to_shifts(df):
     return shifts
 
 
-def generate_pdf_bytes(shifts, out_path, surname, period):
-    output_name = write_shifts_to_pdf(shifts, out_path, surname, period)
+def generate_pdf_bytes(shifts, out_path, surname, period, notes):
+    """Byte del PDF generato e l'eventuale avviso di write_shifts_to_pdf."""
+    output_name, warning = write_shifts_to_pdf(shifts, out_path, surname, period, notes)
     with open(output_name, "rb") as f:
         pdf_bytes = f.read()
     if os.path.exists(output_name):
         os.remove(output_name)
-    return pdf_bytes
+    return pdf_bytes, warning
+
+
+def gemini_settings():
+    """Chiave e modello di Gemini dai Secrets; senza secrets.toml st.secrets solleva."""
+    try:
+        return st.secrets.get("GEMINI_API_KEY"), st.secrets.get("GEMINI_MODEL")
+    except Exception:
+        return None, None
+
+
+@st.cache_data(show_spinner=False, max_entries=20)
+def cached_gemini(request_json, api_key, model):
+    # Solleva sugli errori: st.cache_data non mette in cache le eccezioni, così un
+    # errore passeggero (429, rete) non resta in memoria per tutti.
+    return gemini_notes(request_json, api_key, model)
+
+
+def describe_rules(note):
+    """A quali turni va l'etichetta di un'indicazione, in parole."""
+    if note.get("pulizia"):
+        return "Pulizia bagni (etichetta ambra dal colore delle celle)"
+    if not note.get("regole"):
+        return "Nessun turno: solo testo"
+    parts = []
+    for rule in note["regole"]:
+        text = rule["luogo"]
+        if rule.get("orari"):
+            text += " " + ", ".join(rule["orari"])
+        if rule.get("giorni"):
+            text += " (" + ", ".join(_day(d)[:3] for d in rule["giorni"]) + ")"
+        parts.append(text)
+    return "; ".join(parts)
 
 
 # ── App Logic ────────────────────────────────────────────────────────────────
@@ -438,6 +479,10 @@ with st.sidebar:
                     st.session_state.surname = surname_input
                     st.session_state.need_regenerate = True
                     st.session_state.last_processed_key = current_proc_key
+                    api_key, model = gemini_settings()
+                    st.session_state.notes, st.session_state.notes_source = notes_with_labels(
+                        table, api_key, model, call=cached_gemini)
+                    st.session_state.notes_run += 1  # tabella delle indicazioni nuova: niente modifiche vecchie
                     st.toast(f"Trovati {len(extracted)} turni!", icon="✅")
 
     if st.session_state.pdf_processed:
@@ -463,7 +508,7 @@ if not st.session_state.pdf_processed:
         st.image("https://cdn-icons-png.flaticon.com/512/3394/3394866.png", width=200)
 
 else:
-    tab1, tab2, tab3 = st.tabs(["📄 PDF GENERATO", "✏️ MODIFICA TURNI", "🔍 LETTURA PDF"])
+    tab1, tab2, tab4, tab3 = st.tabs(["📄 PDF GENERATO", "✏️ MODIFICA TURNI", "📌 INDICAZIONI", "🔍 LETTURA PDF"])
 
     # ── TAB 1: PDF GENERATO ──────────────────────────────────────────────────
     with tab1:
@@ -471,14 +516,17 @@ else:
             st.warning(w)
         if st.session_state.need_regenerate or st.session_state.generated_pdf_bytes is None:
             with st.spinner("Generazione file..."):
-                st.session_state.generated_pdf_bytes = generate_pdf_bytes(
+                st.session_state.generated_pdf_bytes, st.session_state.pdf_warning = generate_pdf_bytes(
                     st.session_state.shifts,
                     st.session_state.output_filename,
                     st.session_state.surname,
                     week_period(st.session_state.table),
+                    st.session_state.notes,
                 )
                 st.session_state.need_regenerate = False
-        
+        if st.session_state.pdf_warning:
+            st.warning(st.session_state.pdf_warning)
+
         display_pdf(
             st.session_state.generated_pdf_bytes,
             filename=st.session_state.output_filename,
@@ -536,6 +584,57 @@ else:
                 st.session_state.shifts = df_to_shifts(edited_shifts_df)
                 st.session_state.need_regenerate = True
                 st.success("Modifiche salvate con successo!")
+                st.rerun()
+
+    # ── TAB 4: INDICAZIONI ───────────────────────────────────────────────────
+    with tab4:
+        st.subheader("📌 Indicazioni della settimana")
+        st.caption(st.session_state.notes_source)
+        notes = st.session_state.notes or []
+        if not notes:
+            st.info("Nessuna indicazione accanto alla tabella in questo PDF.")
+        else:
+            st.caption("Il testo intero va sempre in fondo al PDF. Qui si cambia l'etichetta accanto ai turni "
+                       "o la si toglie (Attiva). Le modifiche valgono solo per questa elaborazione.")
+            linked = [n for n in notes if n.get("regole")]
+            text_only = [n for n in notes if not n.get("regole")]
+            notes_df = pd.DataFrame([{
+                "N": n["n"],
+                "Attiva": n.get("attiva", True),
+                "Etichetta": n["etichetta"],
+                "Turni": describe_rules(n),
+                "Testo": readable_note(n["testo"]),
+            } for n in linked], columns=["N", "Attiva", "Etichetta", "Turni", "Testo"])
+            edited_notes = st.data_editor(
+                notes_df,
+                hide_index=True,
+                width="stretch",
+                disabled=["N", "Turni", "Testo"],
+                column_config={
+                    "N": st.column_config.NumberColumn("N", width="small"),
+                    "Attiva": st.column_config.CheckboxColumn("Attiva", width="small"),
+                    "Etichetta": st.column_config.TextColumn("Etichetta", width="medium", max_chars=45),
+                    "Turni": st.column_config.TextColumn("Turni", width="medium"),
+                    "Testo": st.column_config.TextColumn("Testo", width="large"),
+                },
+                key=f"notes_editor_{st.session_state.notes_run}",
+            )
+            if text_only:
+                st.caption("Senza etichetta sui turni (solo testo in fondo al PDF):")
+                st.dataframe(pd.DataFrame([{"N": n["n"], "Turni": describe_rules(n), "Testo": readable_note(n["testo"])}
+                                           for n in text_only]), hide_index=True, width="stretch")
+            if st.button("💾 SALVA INDICAZIONI E RIGENERA PDF", type="primary"):
+                changes = {int(r["N"]): r for _, r in edited_notes.iterrows()}
+                updated = []
+                for n in notes:
+                    row = changes.get(n["n"])
+                    if row is not None:
+                        label = "" if pd.isna(row["Etichetta"]) else str(row["Etichetta"]).strip()
+                        n = dict(n, etichetta=label or f"Nota {n['n']}", attiva=bool(row["Attiva"]))
+                    updated.append(n)
+                st.session_state.notes = updated
+                st.session_state.need_regenerate = True
+                st.success("Indicazioni salvate!")
                 st.rerun()
 
     # ── TAB 3: LETTURA PDF ───────────────────────────────────────────────────
