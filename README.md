@@ -166,8 +166,11 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
 - **In locale, app**: dopo i requisiti, `.venv/bin/streamlit run app.py`.
 - **Chiave Gemini** (facoltativa; senza, le etichette sono "Nota N"): si crea
   gratis su Google AI Studio. Su Streamlit Cloud: Manage app → Settings →
-  Secrets, una riga `GEMINI_API_KEY = "..."` (e se serve `GEMINI_MODEL`,
-  default `gemini-flash-latest`). In locale per l'app:
+  Secrets, una riga `GEMINI_API_KEY = "..."`. I modelli si provano a cascata
+  (`GEMINI_MODELS`: gemini-3.6-flash, gemini-3.8-flash, gemini-3.5-flash-lite):
+  se uno dà errore (503 per troppo traffico, 429) si passa al successivo.
+  `GEMINI_MODEL` nei Secrets, con uno o più nomi separati da virgole, sostituisce
+  la lista. In locale per l'app:
   `.streamlit/secrets.toml` con la stessa riga (escluso da git); per la CLI:
   `export GEMINI_API_KEY=...`. Gemini viene chiamato una volta per testo delle
   indicazioni, poi la risposta resta in cache fino al riavvio dell'app.

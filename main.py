@@ -520,7 +520,8 @@ def sort_days(shifts):
 GENERIC_WORDS = {'giardini', 'giardino', 'stadio', 'parco', 'villa', 'viale', 'piazza', 'della',
                  'delle', 'dello', 'degli', 'dell', 'dall', 'nell', 'sull', 'alla', 'alle', 'dalla',
                  'nella', 'sulla', 'sede', 'turno', 'via'}
-GEMINI_DEFAULT_MODEL = "gemini-flash-latest"
+# Provati in ordine: se uno risponde con un errore (503 per troppo traffico, 429, …) si passa al successivo.
+GEMINI_MODELS = ("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite")
 GEMINI_LABEL_MAX = 45
 
 
@@ -649,10 +650,23 @@ Dati:
 
 def gemini_notes(request_json, api_key, model=None):
     """
-    Chiama Gemini (REST generateContent) e ritorna la lista che ha risposto.
-    Solleva su qualunque problema: rete, timeout, codice diverso da 200, risposta
-    senza testo o JSON non valido. Il ripiego lo fa chi chiama.
+    Chiama Gemini e ritorna la lista che ha risposto. model è un nome o più nomi
+    separati da virgole (default GEMINI_MODELS): si provano in ordine e vince il
+    primo che risponde bene. Solleva se falliscono tutti, con l'errore di ognuno.
+    Il ripiego lo fa chi chiama.
     """
+    models = [m.strip() for m in (model or ",".join(GEMINI_MODELS)).split(",") if m.strip()]
+    errors = []
+    for name in models:
+        try:
+            return _gemini_call(request_json, api_key, name)
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+    raise RuntimeError("; ".join(errors))
+
+
+def _gemini_call(request_json, api_key, model):
+    """Una chiamata REST generateContent a un modello; solleva su qualunque problema."""
     import requests  # solo qui: parser e PDF non ne hanno bisogno
     day_enum = [format_day_for_display(d) for d in DAY_NAMES]
     schema = {"type": "ARRAY", "items": {"type": "OBJECT", "required": ["n", "etichetta", "turni"], "properties": {
@@ -665,7 +679,7 @@ def gemini_notes(request_json, api_key, model=None):
         }}},
     }}}
     response = requests.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model or GEMINI_DEFAULT_MODEL}:generateContent",
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
         json={"contents": [{"role": "user", "parts": [{"text": GEMINI_PROMPT + request_json}]}],
               "generationConfig": {"temperature": 0, "responseMimeType": "application/json",
