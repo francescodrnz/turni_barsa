@@ -12,7 +12,8 @@ from main import (
     output_filename,
     week_period,
     notes_with_labels,
-    gemini_notes,
+    llm_notes,
+    LLM_PROVIDERS,
     readable_note,
     format_day_for_display as _day,
 )
@@ -369,19 +370,20 @@ def generate_pdf_bytes(shifts, out_path, surname, period, notes):
     return pdf_bytes, warning
 
 
-def gemini_settings():
-    """Chiave e modello di Gemini dai Secrets; senza secrets.toml st.secrets solleva."""
+def llm_settings():
+    """Chiavi e modelli (Groq, Gemini) dai Secrets; senza secrets.toml st.secrets solleva."""
+    names = [n for _, key, model, _ in LLM_PROVIDERS for n in (key, model)]
     try:
-        return st.secrets.get("GEMINI_API_KEY"), st.secrets.get("GEMINI_MODEL")
+        return {n: st.secrets.get(n) for n in names}
     except Exception:
-        return None, None
+        return {}
 
 
 @st.cache_data(show_spinner=False, max_entries=20)
-def cached_gemini(request_json, api_key, model):
+def cached_llm(request_json, settings):
     # Solleva sugli errori: st.cache_data non mette in cache le eccezioni, così un
     # errore passeggero (429, rete) non resta in memoria per tutti.
-    return gemini_notes(request_json, api_key, model)
+    return llm_notes(request_json, settings)
 
 
 def describe_rules(note):
@@ -484,11 +486,9 @@ with st.sidebar:
                     st.session_state.surname = surname_input
                     st.session_state.need_regenerate = True
                     st.session_state.last_processed_key = current_proc_key
-                    api_key, model = gemini_settings()
-                    if api_key:
-                        st.toast("Etichette delle indicazioni da Gemini: può volerci fino a un minuto…")
+                    settings = llm_settings()
                     st.session_state.notes, st.session_state.notes_source = notes_with_labels(
-                        table, api_key, model, call=cached_gemini)
+                        table, settings, call=cached_llm)
                     st.session_state.notes_run += 1  # tabella delle indicazioni nuova: niente modifiche vecchie
                     st.toast(f"Trovati {len(extracted)} turni!", icon="✅")
 

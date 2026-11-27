@@ -520,10 +520,8 @@ def sort_days(shifts):
 GENERIC_WORDS = {'giardini', 'giardino', 'stadio', 'parco', 'villa', 'viale', 'piazza', 'della',
                  'delle', 'dello', 'degli', 'dell', 'dall', 'nell', 'sull', 'alla', 'alle', 'dalla',
                  'nella', 'sulla', 'sede', 'turno', 'via'}
-# Provati in ordine: se uno risponde con un errore (503 per troppo traffico, 429, …) si passa al successivo.
-GEMINI_MODELS = ("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite")
-GEMINI_LABEL_MAX = 45
-GEMINI_TIMEOUT = 40  # secondi per modello: la 3.6-flash risponde in 15-50 s
+LLM_LABEL_MAX = 45
+LLM_TIMEOUT = 40  # secondi per modello: gemini-3.6-flash risponde in 15-50 s
 
 
 def _plain(text):
@@ -640,7 +638,7 @@ def _looks_like_name(cell):
         and not low.startswith("add")
 
 
-def gemini_request(table, notes):
+def llm_request(table, notes):
     """
     Testo della richiesta a Gemini (JSON): le indicazioni da etichettare e le righe
     della tabella come luogo, orario e giorni in cui ci lavora qualcuno. Mai i nomi.
@@ -664,84 +662,136 @@ def gemini_request(table, notes):
     return json.dumps({"indicazioni": todo, "turni": rows}, ensure_ascii=False)
 
 
-GEMINI_PROMPT = """Sei l'assistente di un servizio di custodia di parchi e strutture.
+LLM_PROMPT = """Sei l'assistente di un servizio di custodia di parchi e strutture.
 Ricevi le indicazioni settimanali scritte dal responsabile e l'elenco dei turni
 (luogo, orario, giorni in cui c'è qualcuno). Rispondi per TUTTE le indicazioni,
-anche quelle che sono solo un'informazione (es. "Atleti Simeone entrano da via
-Chieffi"). Per ogni indicazione:
+anche quelle che sono solo un'informazione. Per ogni indicazione:
 - n: il numero dell'indicazione;
 - etichetta: un riassunto in italiano di al massimo 5-6 parole (massimo 45
   caratteri) di cosa deve fare chi è di turno, da mettere accanto al turno.
-  Nomina sempre il posto su cui agire, con i nomi propri con l'iniziale maiuscola
-  (es. "Apri e chiudi giardini Manzoni", non "Apri e chiudi giardini");
+  Deve contenere il NOME del posto su cui agire, preso dal testo (Manzoni,
+  Green Park, via Chieffi…), con l'iniziale maiuscola. Mai parole generiche da
+  sole come "giardini", "parco" o "gestisci". Esempi buoni: "Apri e chiudi
+  giardini Manzoni", "Chiudi Green Park e giardini Manzoni", "Atleti Simeone
+  entrano da via Chieffi";
 - turni: a chi è rivolta, cioè l'addetto che deve fare la cosa (il soggetto),
   non i luoghi solo citati. Un elemento per ogni turno (luogo + orario) a cui
-  si applica, con i giorni se vale solo in alcuni, e la sua etichetta: se
-  l'indicazione chiede cose diverse a turni diversi (es. il turno del
-  pomeriggio apre e chiude dei giardini, quello della domenica mattina fa
+  si applica, con i giorni se vale solo in alcuni, e la sua etichetta (stesse
+  regole): se l'indicazione chiede cose diverse a turni diversi (es. il turno
+  del pomeriggio apre e chiude dei giardini, quello della domenica mattina fa
   l'apertura del mattino), ogni turno ha l'etichetta di quello che tocca a
   lui. Usa esattamente i nomi di luogo e gli orari dell'elenco, un elemento
   per orario. Non mettere turni a cui l'indicazione non si applica. Lascia
   giorni vuoto se vale per tutti i giorni.
 
+Rispondi solo con un oggetto JSON di questa forma:
+{"indicazioni": [{"n": 3, "etichetta": "...", "turni": [{"luogo": "...",
+"orario": "HH:MM-HH:MM", "giorni": ["domenica"], "etichetta": "..."}]}]}
+
 Dati:
 """
 
+# Fornitori e modelli provati in ordine, saltando quelli senza chiave: se uno
+# risponde con un errore (503 per troppo traffico, 429, timeout…) si passa al
+# successivo. GROQ_MODEL / GEMINI_MODEL (uno o più nomi separati da virgole)
+# sostituiscono la lista di quel fornitore.
+LLM_PROVIDERS = (
+    ("groq", "GROQ_API_KEY", "GROQ_MODEL", ("qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b")),
+    ("gemini", "GEMINI_API_KEY", "GEMINI_MODEL", ("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite")),
+)
 
-def gemini_notes(request_json, api_key, model=None):
+
+def llm_notes(request_json, settings):
     """
-    Chiama Gemini e ritorna la lista che ha risposto. model è un nome o più nomi
-    separati da virgole (default GEMINI_MODELS): si provano in ordine e vince il
-    primo che risponde bene. Solleva se falliscono tutti, con l'errore di ognuno.
-    Il ripiego lo fa chi chiama.
+    Chiede le etichette al primo modello che risponde bene, nell'ordine di
+    LLM_PROVIDERS. settings: dict con le chiavi (GROQ_API_KEY, GEMINI_API_KEY) e
+    gli eventuali GROQ_MODEL / GEMINI_MODEL. Ritorna (lista, "fornitore/modello").
+    Solleva se non c'è nessuna chiave o se falliscono tutti, con l'errore di ognuno.
     """
-    models = [m.strip() for m in (model or ",".join(GEMINI_MODELS)).split(",") if m.strip()]
+    calls = {"groq": _groq_call, "gemini": _gemini_call}
     errors = []
-    for name in models:
-        try:
-            return _gemini_call(request_json, api_key, name)
-        except Exception as e:
-            errors.append(f"{name}: {e}")
-    raise RuntimeError("; ".join(errors))
+    for provider, key_name, model_name, defaults in LLM_PROVIDERS:
+        api_key = (settings or {}).get(key_name)
+        if not api_key:
+            continue
+        override = (settings or {}).get(model_name)
+        models = [m.strip() for m in override.split(",")] if override else list(defaults)
+        for model in filter(None, models):
+            try:
+                return calls[provider](request_json, api_key, model), f"{provider} {model}"
+            except Exception as e:
+                errors.append(f"{provider} {model}: {e}")
+    raise RuntimeError("; ".join(errors) or "nessuna chiave impostata")
+
+
+def _answer_list(text):
+    """Lista delle indicazioni da un testo JSON: una lista o {"indicazioni": [...]}."""
+    result = json.loads(text)
+    if isinstance(result, dict):
+        result = result.get("indicazioni")
+    if not isinstance(result, list):
+        raise ValueError("non è una lista di indicazioni")
+    return result
+
+
+def _http_error(name, response):
+    try:
+        detail = response.json()["error"]["message"]
+    except Exception:
+        detail = response.text[:200]
+    return RuntimeError(f"{name} ha risposto {response.status_code}: {detail}")
+
+
+def _groq_call(request_json, api_key, model):
+    """Una chiamata a Groq (API compatibile con OpenAI); solleva su qualunque problema."""
+    import requests  # solo qui: parser e PDF non ne hanno bisogno
+    response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={"model": model, "temperature": 0, "response_format": {"type": "json_object"},
+              "messages": [{"role": "system", "content": LLM_PROMPT.rsplit("Dati:", 1)[0]},
+                           {"role": "user", "content": "Dati:\n" + request_json}]},
+        timeout=LLM_TIMEOUT,
+    )
+    if response.status_code != 200:
+        raise _http_error("Groq", response)
+    try:
+        return _answer_list(response.json()["choices"][0]["message"]["content"])
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        raise RuntimeError(f"Risposta di Groq non leggibile ({e})") from e
 
 
 def _gemini_call(request_json, api_key, model):
-    """Una chiamata REST generateContent a un modello; solleva su qualunque problema."""
+    """Una chiamata REST generateContent a Gemini; solleva su qualunque problema."""
     import requests  # solo qui: parser e PDF non ne hanno bisogno
     day_enum = [format_day_for_display(d) for d in DAY_NAMES]
-    schema = {"type": "ARRAY", "items": {"type": "OBJECT", "required": ["n", "etichetta", "turni"], "properties": {
-        "n": {"type": "INTEGER"},
-        "etichetta": {"type": "STRING"},
-        "turni": {"type": "ARRAY", "items": {"type": "OBJECT", "required": ["luogo", "orario", "etichetta"], "properties": {
-            "luogo": {"type": "STRING"},
-            "orario": {"type": "STRING"},
-            "giorni": {"type": "ARRAY", "items": {"type": "STRING", "enum": day_enum}},
+    schema = {"type": "OBJECT", "required": ["indicazioni"], "properties": {"indicazioni": {
+        "type": "ARRAY", "items": {"type": "OBJECT", "required": ["n", "etichetta", "turni"], "properties": {
+            "n": {"type": "INTEGER"},
             "etichetta": {"type": "STRING"},
-        }}},
-    }}}
+            "turni": {"type": "ARRAY", "items": {"type": "OBJECT", "required": ["luogo", "orario", "etichetta"],
+                                                  "properties": {
+                "luogo": {"type": "STRING"},
+                "orario": {"type": "STRING"},
+                "giorni": {"type": "ARRAY", "items": {"type": "STRING", "enum": day_enum}},
+                "etichetta": {"type": "STRING"},
+            }}},
+        }}}}}
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-        json={"contents": [{"role": "user", "parts": [{"text": GEMINI_PROMPT + request_json}]}],
+        json={"contents": [{"role": "user", "parts": [{"text": LLM_PROMPT + request_json}]}],
               "generationConfig": {"temperature": 0, "responseMimeType": "application/json",
                                    "responseSchema": schema}},
-        timeout=GEMINI_TIMEOUT,
+        timeout=LLM_TIMEOUT,
     )
     if response.status_code != 200:
-        try:
-            detail = response.json()["error"]["message"]
-        except Exception:
-            detail = response.text[:200]
-        raise RuntimeError(f"Gemini ha risposto {response.status_code}: {detail}")
-    data = response.json()
+        raise _http_error("Gemini", response)
     try:
-        text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
-        result = json.loads(text)
+        data = response.json()
+        return _answer_list("".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"]))
     except (KeyError, IndexError, TypeError, ValueError) as e:
         raise RuntimeError(f"Risposta di Gemini non leggibile ({e})") from e
-    if not isinstance(result, list):
-        raise RuntimeError("Risposta di Gemini non leggibile (non è una lista)")
-    return result
 
 
 def _overlap(a, b):
@@ -750,7 +800,7 @@ def _overlap(a, b):
     return a0 < b1 and b0 < a1
 
 
-def apply_gemini(table, notes, result):
+def apply_llm(table, notes, result):
     """
     Applica la risposta di Gemini alle note del livello 2. Abbina per n. Le regole
     di Gemini stanno dentro il luogo e gli orari già trovati: orari (uguale, se no
@@ -774,9 +824,9 @@ def apply_gemini(table, notes, result):
         if not answer or not note["regole"]:
             updated.append(note)
             continue
-        note = dict(note, fonte="gemini")
+        note = dict(note, fonte="modello")
         label = str(answer.get("etichetta") or "").strip()
-        if 0 < len(label) <= GEMINI_LABEL_MAX:
+        if 0 < len(label) <= LLM_LABEL_MAX:
             note["etichetta"] = label
         allowed = {_plain(r["luogo"]): r["luogo"] for r in note["regole"]}
         base_hours = {_plain(r["luogo"]): r.get("orari") for r in note["regole"]}
@@ -797,7 +847,7 @@ def apply_gemini(table, notes, result):
             rule_label = str(turn.get("etichetta") or "").strip()
             rules.append({"luogo": allowed[key], "orari": hours or None, "giorni": days or None,
                           "orari_luogo": times.get(key, []),
-                          "etichetta": rule_label if 0 < len(rule_label) <= GEMINI_LABEL_MAX else None})
+                          "etichetta": rule_label if 0 < len(rule_label) <= LLM_LABEL_MAX else None})
         if rules:
             # Prima le regole di Gemini (etichetta per turno), poi quelle lette dal
             # testo come ripiego: i turni che Gemini salta tengono la nota, con
@@ -807,26 +857,27 @@ def apply_gemini(table, notes, result):
     return updated
 
 
-def notes_with_labels(table, api_key=None, model=None, call=None):
+def notes_with_labels(table, settings=None, call=None):
     """
-    Indicazioni con regole ed etichette, e un messaggio sulla fonte. Senza chiave o
-    con un errore di Gemini restano le etichette "Nota N" del primo luogo nominato.
-    call(request_json, api_key, model) sostituisce gemini_notes (l'app ci mette la cache).
+    Indicazioni con regole ed etichette, e un messaggio sulla fonte. settings ha
+    le chiavi e i modelli (vedi llm_notes). Senza chiavi o con un errore restano le
+    etichette "Nota N" lette dal testo. call(request_json, settings) sostituisce
+    llm_notes (l'app ci mette la cache).
     """
     notes = link_notes(table)
-    request_json = gemini_request(table, notes)
+    request_json = llm_request(table, notes)
     if request_json is None:
         return notes, "Nessuna indicazione da collegare ai turni."
-    if not api_key:
-        return notes, "Etichette \"Nota N\" dal primo luogo nominato: chiave Gemini non impostata."
+    if not any((settings or {}).get(key) for _, key, _, _ in LLM_PROVIDERS):
+        return notes, "Etichette \"Nota N\" lette dal testo: nessuna chiave (Groq o Gemini) impostata."
     try:
-        result = (call or gemini_notes)(request_json, api_key, model)
-        labeled = apply_gemini(table, notes, result)
+        result, source = (call or llm_notes)(request_json, settings)
+        labeled = apply_llm(table, notes, result)
     except Exception as e:
-        return notes, f"Etichette \"Nota N\" dal primo luogo nominato: Gemini non disponibile ({e})."
-    if not any(n["fonte"] == "gemini" for n in labeled):
-        return notes, "Etichette \"Nota N\" dal primo luogo nominato: Gemini non ha dato etichette utilizzabili."
-    return labeled, "Etichette e collegamenti da Gemini."
+        return notes, f"Etichette \"Nota N\" lette dal testo: modello non disponibile ({e})."
+    if not any(n["fonte"] == "modello" for n in labeled):
+        return notes, f"Etichette \"Nota N\" lette dal testo: {source} non ha dato etichette utilizzabili."
+    return labeled, f"Etichette e collegamenti da {source}."
 
 
 def readable_note(text):
@@ -1282,7 +1333,8 @@ def main():
     shifts_sorted = sort_days(shifts)
     print_shifts(shifts_sorted)
 
-    notes, source = notes_with_labels(table, os.environ.get("GEMINI_API_KEY"), os.environ.get("GEMINI_MODEL"))
+    settings = {k: os.environ.get(k) for _, key, model, _ in LLM_PROVIDERS for k in (key, model)}
+    notes, source = notes_with_labels(table, settings)
     print(source)
     _, warning = write_shifts_to_pdf(shifts_sorted, output_filename(table, surname), surname, week_period(table), notes)
     if warning:

@@ -80,14 +80,14 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
     gli orari del luogo che li toccano (la nota del Puttilli va solo sui turni
     di mattina; quella del Borgia, che nomina sia il pomeriggio sia 08-14,
     resta su tutti);
-  - `notes_with_labels`: se c'è la chiave, `gemini_notes` chiama Gemini
+  - `notes_with_labels`: se c'è una chiave, `llm_notes` chiama Groq o Gemini
     (REST, `requests` importato solo lì) con le note e le righe della tabella
     come luogo, orario e giorni in cui la cella sembra un nome
     (`_looks_like_name`), **mai i nomi**. Gemini risponde con un'etichetta per
     nota e una per ogni turno (luogo + orario), così una nota che chiede cose
     diverse a turni diversi (Borgia: pomeriggio "Apri/chiudi Manzoni e Green
     Park", domenica 08-14 "Apertura antimeridiana") ha etichette diverse.
-    `apply_gemini` abbina per `n`, prende le etichette (max 45 caratteri) e
+    `apply_llm` abbina per `n`, prende le etichette (max 45 caratteri) e
     restringe le regole dentro il luogo e gli orari del livello 2: orario
     uguale, altrimenti quelli che si sovrappongono in senso stretto; giorni con
     `normalize_day_name`; liste vuote = nessuna restrizione. Gemini non
@@ -148,8 +148,8 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   rigenera PDF", oppure con il form "Aggiungi un nuovo turno". Vivono nella
   sessione e si perdono ricaricando la pagina.
 - Indicazioni: al Genera turni `notes_with_labels` con la chiave di
-  `gemini_settings` (`st.secrets`, dentro `try` perché senza `secrets.toml`
-  solleva) e `cached_gemini` (`st.cache_data`: in cache solo le risposte
+  `llm_settings` (`st.secrets`, dentro `try` perché senza `secrets.toml`
+  solleva) e `cached_llm` (`st.cache_data`: in cache solo le risposte
   riuscite, perché gli errori sollevano).
 - Tab *Indicazioni*: la fonte delle etichette, poi una tabella con N, Attiva,
   Etichetta (modificabili le ultime due), i turni a cui va e il testo. "Salva
@@ -175,17 +175,18 @@ su Streamlit Cloud) e uno script interattivo da terminale (`main.py`).
   "Turni ", chiede il cognome, stampa avvisi e turni e scrive il PDF nella
   cartella corrente.
 - **In locale, app**: dopo i requisiti, `.venv/bin/streamlit run app.py`.
-- **Chiave Gemini** (facoltativa; senza, le etichette sono "Nota N"): si crea
-  gratis su Google AI Studio. Su Streamlit Cloud: Manage app → Settings →
-  Secrets, una riga `GEMINI_API_KEY = "..."`. I modelli si provano a cascata
-  (`GEMINI_MODELS`: gemini-3.6-flash, gemini-3.8-flash, gemini-3.5-flash-lite),
-  con al massimo `GEMINI_TIMEOUT` (40 s) ciascuno: se uno dà errore (503 per
-  troppo traffico, 429) o non risponde in tempo si passa al successivo.
-  `GEMINI_MODEL` nei Secrets, con uno o più nomi separati da virgole, sostituisce
-  la lista. In locale per l'app:
-  `.streamlit/secrets.toml` con la stessa riga (escluso da git); per la CLI:
-  `export GEMINI_API_KEY=...`. Gemini viene chiamato una volta per testo delle
-  indicazioni, poi la risposta resta in cache fino al riavvio dell'app.
+- **Chiavi dei modelli** (facoltative; senza, le etichette sono "Nota N"):
+  Groq (console.groq.com → API Keys) e/o Gemini (Google AI Studio), tutte e
+  due gratuite. Su Streamlit Cloud: Manage app → Settings → Secrets, una riga
+  per chiave, `GROQ_API_KEY = "..."` e `GEMINI_API_KEY = "..."`. In locale per
+  l'app: `.streamlit/secrets.toml` con le stesse righe (escluso da git); per la
+  CLI le stesse variabili d'ambiente. `LLM_PROVIDERS` dà l'ordine: prima Groq
+  (qwen/qwen3.8-27b, openai/gpt-oss-120b, openai/gpt-oss-20b), poi Gemini (gemini-3.6-flash,
+  gemini-3.8-flash, gemini-3.5-flash-lite), saltando i fornitori senza chiave,
+  con al massimo `LLM_TIMEOUT` (40 s) per modello; al primo errore (503, 429,
+  timeout) si passa al successivo. `GROQ_MODEL` / `GEMINI_MODEL` nei Secrets,
+  con uno o più nomi separati da virgole, sostituiscono la lista di quel
+  fornitore. La risposta resta in cache fino al riavvio dell'app.
 
 Dopo una modifica al parser si rigenerano i turni di Crudele Francesco
 sull'ultimo PDF, si confrontano a occhio con la tabella originale e si lancia
@@ -220,6 +221,11 @@ il controllo su tutti i PDF di `pdf_turni/` (Comandi utili).
   0,3 s e 26 KB per PDF. `week_period` uguale al nome del file su 18 PDF, anche
   a cavallo d'anno ("dal 29 dicembre 2025 al 4 gennaio 2026").
 
+- 2026-11-27, Groq sulla 49 (piano gratuito): qwen/qwen3.8-27b circa 2 s,
+  etichette specifiche e uguali fra una chiamata e l'altra, ma 429 alla terza
+  chiamata di fila (limite al minuto); openai/gpt-oss-120b 5-8 s, etichette
+  buone, una volta su tre 400 "Failed to validate JSON"; openai/gpt-oss-20b
+  sempre 400 "Failed to validate JSON".
 - 2026-11-27, Gemini sulla 49 con la chiave vera: gemini-3.6-flash 17-54 s,
   etichette specifiche e una per turno; gemini-3.8-flash 503 (troppo
   traffico); gemini-3.5-flash-lite 1,5-2 s, etichette a volte generiche
